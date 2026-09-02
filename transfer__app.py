@@ -8,12 +8,18 @@ from io import BytesIO
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
 
 # ---------------------------------------------------------
-# Session State 초기화 (탭 전환 시 데이터 유지용)
+# Session State 초기화 (탭 전환 시 데이터 유지 및 초기화용)
 # ---------------------------------------------------------
 if 'transfer_files_data' not in st.session_state:
     st.session_state['transfer_files_data'] = []
 if 'output_files_data' not in st.session_state:
     st.session_state['output_files_data'] = []
+    
+# 파일 업로더 위젯 리셋을 위한 고유 키(Key) 생성
+if 't_uploader_key' not in st.session_state:
+    st.session_state['t_uploader_key'] = 0
+if 'o_uploader_key' not in st.session_state:
+    st.session_state['o_uploader_key'] = 0
 
 # ---------------------------------------------------------
 # 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
@@ -35,8 +41,10 @@ with st.sidebar:
         st.header("⚙️ Transfer 축 범위 설정")
         
         st.subheader("📌 X축 설정 (Gate Voltage)")
-        t_x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5, key="t_xmin")
-        t_x_max = st.number_input("X축 최대값 (V)", value=1.0, step=0.5, key="t_xmax")
+        t_x_auto = st.checkbox("X축 자동 조절", value=True, key="t_x_auto")
+        if not t_x_auto:
+            t_x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5, key="t_xmin")
+            t_x_max = st.number_input("X축 최대값 (V)", value=1.0, step=0.5, key="t_xmax")
         
         st.subheader("📌 Linear Y축 설정 (Id)")
         t_y_lin_auto = st.checkbox("Linear Y축 자동 조절", value=True, key="t_ylin_auto")
@@ -75,7 +83,13 @@ st.title("📊 반도체 소자 특성 통합 분석 웹앱")
 if analysis_mode == "1. Transfer 특성 분석":
     st.markdown("Transfer CSV 파일들을 업로드하세요. 통합 그래프, 파라미터 비교표, **개별 단위 변환 엑셀**을 제공합니다.")
     
-    uploaded_transfer = st.file_uploader("Transfer 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="transfer_uploader")
+    # 동적 키(Key)를 사용하여 파일 업로더 렌더링 (초기화 시 리셋됨)
+    uploaded_transfer = st.file_uploader(
+        "Transfer 데이터 CSV 파일들을 올려주세요.", 
+        type=['csv'], 
+        accept_multiple_files=True, 
+        key=f"transfer_uploader_{st.session_state['t_uploader_key']}"
+    )
     
     # 파일이 새로 업로드되면 Session State 업데이트
     if uploaded_transfer:
@@ -84,7 +98,15 @@ if analysis_mode == "1. Transfer 특성 분석":
     files_to_process = st.session_state['transfer_files_data']
 
     if files_to_process:
-        st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 유지/분석 중입니다.")
+        # 삭제 버튼과 안내 문구를 나란히 배치
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 유지/분석 중입니다.")
+        with col2:
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True):
+                st.session_state['transfer_files_data'] = []
+                st.session_state['t_uploader_key'] += 1 # 키를 변경하여 업로더 위젯 리셋
+                st.rerun() # 화면 새로고침
 
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -187,15 +209,16 @@ if analysis_mode == "1. Transfer 특성 분석":
         ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True)
         ax1_twin.tick_params(axis='y', direction='in', labelsize=10, width=1.5)
         
-        # X축 범위
-        ax1.set_xlim(t_x_min, t_x_max)  
-        ax2.set_xlim(t_x_min, t_x_max)
+        # X축 수동 범위 적용
+        if not t_x_auto:
+            ax1.set_xlim(t_x_min, t_x_max)  
+            ax2.set_xlim(t_x_min, t_x_max)
         
-        # Linear Y축 범위 적용
+        # Linear Y축 수동 범위 적용
         if not t_y_lin_auto:
             ax1.set_ylim(t_y_lin_min, t_y_lin_max)
             
-        # Log Y축 범위 적용
+        # Log Y축 수동 범위 적용
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
@@ -259,16 +282,28 @@ if analysis_mode == "1. Transfer 특성 분석":
 elif analysis_mode == "2. Output 특성 분석":
     st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선을 시각화하고 단위 변환 엑셀을 제공합니다.")
     
-    uploaded_output = st.file_uploader("Output 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="output_uploader")
+    # 동적 키(Key)를 사용하여 파일 업로더 렌더링
+    uploaded_output = st.file_uploader(
+        "Output 데이터 CSV 파일들을 올려주세요.", 
+        type=['csv'], 
+        accept_multiple_files=True, 
+        key=f"output_uploader_{st.session_state['o_uploader_key']}"
+    )
 
-    # 파일이 새로 업로드되면 Session State 업데이트
     if uploaded_output:
         st.session_state['output_files_data'] = uploaded_output
 
     files_to_process_out = st.session_state['output_files_data']
 
     if files_to_process_out:
-        st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
+        with col2:
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True):
+                st.session_state['output_files_data'] = []
+                st.session_state['o_uploader_key'] += 1 # 키를 변경하여 업로더 위젯 리셋
+                st.rerun() # 화면 새로고침
         
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -307,16 +342,13 @@ elif analysis_mode == "2. Output 특성 분석":
             except Exception as e:
                 st.error(f"오류 발생: [{file.name}] 파일 처리 중 문제가 생겼습니다. 에러 메시지: {e}")
 
-        # 그래프 디자인 및 축 범위를 수동 조절 설정에 맞게 적용
+        # 그래프 디자인 및 축 범위 적용
         ax.set_xlabel('Drain Voltage (V)', fontsize=12, fontweight='bold')
         ax.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
         ax.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
         
-        # X축 범위 적용
         if not o_x_auto:
             ax.set_xlim(o_x_min, o_x_max)
-            
-        # Y축 범위 적용
         if not o_y_auto:
             ax.set_ylim(o_y_min, o_y_max)
         
