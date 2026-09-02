@@ -81,6 +81,18 @@ with st.sidebar:
     elif analysis_mode == "3. TLM 특성 분석":
         st.header("⚙️ TLM 설정")
         t_w_um = st.number_input("전극 폭 (W, um)", value=220.0, step=10.0, key="tlm_w")
+        
+        st.subheader("📌 Ohmic I-V X축 설정")
+        tlm_x_auto = st.checkbox("X축 자동 조절", value=True, key="tlm_x_auto")
+        if not tlm_x_auto:
+            tlm_x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5, key="tlm_xmin")
+            tlm_x_max = st.number_input("X축 최대값 (V)", value=5.0, step=0.5, key="tlm_xmax")
+            
+        st.subheader("📌 Ohmic I-V Y축 설정")
+        tlm_y_auto = st.checkbox("Y축 자동 조절", value=True, key="tlm_y_auto")
+        if not tlm_y_auto:
+            tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
+            tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
@@ -207,7 +219,6 @@ if analysis_mode == "1. Transfer 특성 분석":
             except Exception as e:
                 st.error(f"오류 발생: [{file.name}] 파일 처리 중 문제가 생겼습니다. 에러 메시지: {e}")
 
-        # 그래프 디자인 및 축 범위 적용
         ax1.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax1.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
         ax1_twin.set_ylabel('Transconductance (mS/mm)', fontsize=12, fontweight='bold')
@@ -238,7 +249,6 @@ if analysis_mode == "1. Transfer 특성 분석":
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
         st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Transfer_Plot.png", mime="image/png")
 
-        # 비교표 생성
         if len(all_summaries) > 0:
             st.markdown("---")
             st.subheader("📋 소자별 핵심 파라미터 비교 요약")
@@ -263,7 +273,6 @@ if analysis_mode == "1. Transfer 특성 분석":
                 styled_df.to_excel(writer, index=False)
             st.download_button("📥 비교 요약 엑셀 다운로드 (.xlsx)", data=buf_excel.getvalue(), file_name="Comparison_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
-        # 개별 데이터 다운로드
         if processed_dfs:
             st.markdown("---")
             st.subheader("💾 개별 소자 단위 변환 데이터 다운로드")
@@ -401,7 +410,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.session_state['tlm_uploader_key'] += 1
                 st.rerun()
                 
-        # 파일 이름을 분석하여 그룹(샘플) 단위로 묶기
         tlm_groups = {}
         for file in files_to_process_tlm:
             basename = file.name
@@ -410,7 +418,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 gap = int(match.group(1))
                 idx = match.start()
                 prefix = basename[:idx]
-                group_name = re.sub(r'[\_\-\s]+$', '', prefix) # 숫자 앞의 언더바나 공백 제거
+                group_name = re.sub(r'[\_\-\s]+$', '', prefix)
                 
                 if not group_name:
                     group_name = "기본 샘플 (이름 없음)"
@@ -427,11 +435,9 @@ elif analysis_mode == "3. TLM 특성 분석":
             
             all_tlm_summaries = []
             
-            # 각 샘플 그룹별로 분리해서 그래프 그리기
             for group_name, gap_dict in tlm_groups.items():
                 gaps_found = sorted(gap_dict.keys())
                 
-                # 최소 4포인트(10~40) 검사
                 if not all(g in gaps_found for g in [10, 20, 30, 40]):
                     st.warning(f"[{group_name}] 샘플은 TLM 분석을 위해 최소 10, 20, 30, 40 파일이 모두 필요합니다. (현재 업로드된 간격: {gaps_found}um)")
                     continue
@@ -443,7 +449,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 R_dict = {}
                 voltages = None
                 
-                # 데이터 파싱
+                # 기존 방식: -0.1V와 0.1V 지점의 최솟값을 R로 채택
                 for gap in gaps_found:
                     f = gap_dict[gap]
                     f.seek(0)
@@ -454,7 +460,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                         col_r = [c for c in df.columns if 'Resistance' in c][0]
                         
                         v = df[col_v].values
-                        i_mA = df[col_i].values * 1000 # 전류 mA로 변환
+                        i_mA = df[col_i].values * 1000
                         r = df[col_r].values
                         
                         if voltages is None:
@@ -463,7 +469,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                             
                         iv_data[f'{gap}um Current (mA)'] = i_mA
                         
-                        # -0.1V와 0.1V 근처의 최소 저항값 찾기
                         idx_m01 = np.argmin(np.abs(v - (-0.1)))
                         idx_p01 = np.argmin(np.abs(v - 0.1))
                         min_R = min(r[idx_m01], r[idx_p01])
@@ -473,7 +478,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                         st.error(f"오류: [{f.name}] 파일 처리 실패 ({e})")
                         continue
                         
-                # TLM 핵심 계산 (Linear Regression)
+                # TLM 파라미터 계산
                 L = np.array(gaps_found)
                 R = np.array([R_dict[g] for g in gaps_found])
                 slope, intercept = np.polyfit(L, R, 1)
@@ -496,11 +501,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                     '80um R (Ohm)': R_dict.get(80)
                 })
                 
-                # 시각화: 독립적인 1행 2열 그래프 생성
+                # 시각화 (1행 2열)
                 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
                 cmap = plt.colormaps['tab10']
                 
-                # 왼쪽(ax1): Ohmic 확인용 I-V 플롯
                 for idx, gap in enumerate(gaps_found):
                     if f'{gap}um Current (mA)' in iv_data:
                         ax1.plot(iv_data['Voltage (V)'], iv_data[f'{gap}um Current (mA)'], color=cmap(idx % 10), linewidth=2, label=f'{gap} $\mu m$')
@@ -509,11 +513,18 @@ elif analysis_mode == "3. TLM 특성 분석":
                 ax1.set_xlabel("Voltage (V)", fontsize=11, fontweight='bold')
                 ax1.set_ylabel("Current (mA)", fontsize=11, fontweight='bold')
                 ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
+                
+                # [추가됨] Ohmic I-V X축/Y축 수동 범위 적용
+                if not tlm_x_auto:
+                    ax1.set_xlim(tlm_x_min, tlm_x_max)
+                if not tlm_y_auto:
+                    ax1.set_ylim(tlm_y_min, tlm_y_max)
+                    
                 ax1.legend()
                 
-                # 오른쪽(ax2): TLM (R vs L) 플롯
+                # TLM (R vs Gap) 플롯
                 ax2.plot(L, R, 'ko', markersize=8, label='Measured Resistance')
-                L_line = np.array([0, max(L)]) # 0부터 최대 간격(40 or 80)까지 선 그리기
+                L_line = np.array([0, max(L)]) 
                 R_line = slope * L_line + intercept
                 ax2.plot(L_line, R_line, 'r--', linewidth=2, label=f'Linear Fit (R² ≒ {np.corrcoef(L, R)[0,1]**2:.4f})')
                 
@@ -522,41 +533,48 @@ elif analysis_mode == "3. TLM 특성 분석":
                 ax2.set_ylabel("Total Resistance ($\Omega$)", fontsize=11, fontweight='bold')
                 ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
                 
-                # 그래프 안에 TLM 결과값 텍스트 박스로 표시 (파이썬 3.12+ 이스케이프 문자 경고 수정)
                 text_str = f"$R_s$: {Rs:.2f} $\\Omega/sq$\n$R_c$: {Rc:.2f} $\\Omega$\n$\\rho_c$: {rho_c:.2e} $\\Omega\\cdot cm^2$"
-                
-                # 괄호 닫힘 문제 해결 완료된 코드
                 props = dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray')
-                
                 ax2.text(0.05, 0.95, text_str, transform=ax2.transAxes, fontsize=11, verticalalignment='top', bbox=props)
                 ax2.legend(loc='lower right')
                 
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # 해당 샘플의 데이터만 다운로드
+                # [추가됨] 그래프 이미지 다운로드 버튼 & 데이터 다운로드 버튼
+                col_dl1, col_dl2 = st.columns(2)
+                
+                buf_img_tlm = BytesIO()
+                fig.savefig(buf_img_tlm, format="png", dpi=300, bbox_inches='tight')
+                with col_dl1:
+                    st.download_button(
+                        label=f"🖼️ [{group_name}] 그래프 이미지 다운로드 (.png)",
+                        data=buf_img_tlm.getvalue(),
+                        file_name=f"TLM_{group_name}_Plot.png",
+                        mime="image/png",
+                        key=f"dl_img_tlm_{group_name}"
+                    )
+                
                 iv_df = pd.DataFrame(iv_data)
                 buf_tlm = BytesIO()
                 with pd.ExcelWriter(buf_tlm, engine='openpyxl') as writer:
                     iv_df.to_excel(writer, index=False, sheet_name='I-V Data')
-                
-                st.download_button(
-                    label=f"📥 [{group_name}] 전극별 I-V 데이터 다운로드",
-                    data=buf_tlm.getvalue(),
-                    file_name=f"TLM_{group_name}_IV_Data.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_tlm_{group_name}"
-                )
+                with col_dl2:
+                    st.download_button(
+                        label=f"📥 [{group_name}] 전극별 I-V 데이터 다운로드 (.xlsx)",
+                        data=buf_tlm.getvalue(),
+                        file_name=f"TLM_{group_name}_IV_Data.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_excel_tlm_{group_name}"
+                    )
             
-            # 최종: 분석된 전체 샘플들의 TLM 파라미터를 표로 비교
             if all_tlm_summaries:
                 st.markdown("---")
                 st.subheader("📋 전체 샘플 TLM 분석 결과 요약 비교")
                 sum_df = pd.DataFrame(all_tlm_summaries)
                 
-                # 접촉 저항(Rc)과 비저항(rho_c)이 가장 낮은(성능이 좋은) 수치를 빨간색 하이라이트
                 def highlight_min_tlm(s):
-                    is_min = s == s.min(skipna=True)
+                    is_min = s == s.max(skipna=True) # 최소값에 하이라이트
                     return ['color: red; font-weight: bold' if v else '' for v in is_min]
                     
                 styled_sum = sum_df.style.apply(highlight_min_tlm, subset=['Contact Resistance, Rc (Ohm)', 'Specific Resistivity, rho_c (Ohm.cm2)']).format({'Specific Resistivity, rho_c (Ohm.cm2)': '{:.4E}'})
