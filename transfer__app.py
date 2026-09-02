@@ -4,28 +4,67 @@ import numpy as np
 import matplotlib.pyplot as plt
 from io import BytesIO
 
-# 웹페이지 기본 설정 (항상 최상단에 위치해야 함)
+# 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
 
 # ---------------------------------------------------------
-# 좌측 사이드바: 모드 선택 및 공통 설정
+# Session State 초기화 (탭 전환 시 데이터 유지용)
+# ---------------------------------------------------------
+if 'transfer_files_data' not in st.session_state:
+    st.session_state['transfer_files_data'] = []
+if 'output_files_data' not in st.session_state:
+    st.session_state['output_files_data'] = []
+
+# ---------------------------------------------------------
+# 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
 # ---------------------------------------------------------
 with st.sidebar:
     st.title("⚙️ 제어판 (Control Panel)")
     st.markdown("---")
     
-    # 1. 분석 모드 선택 (라디오 버튼)
+    # 분석 모드 선택
     analysis_mode = st.radio(
         "분석할 데이터 종류를 선택하세요.",
-        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 분석 (추가 예정)")
+        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 분석 (추가 예정)"),
+        key="selected_mode"
     )
     st.markdown("---")
     
-    # 2. 공통 X축 설정 (Transfer용)
+    # 1. Transfer 축 범위 설정
     if analysis_mode == "1. Transfer 특성 분석":
-        st.write("마우스로 슬라이더를 움직여 X축 범위를 조절하세요.")
-        x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5)
-        x_max = st.number_input("X축 최대값 (V)", value=1.0, step=0.5)
+        st.header("⚙️ Transfer 축 범위 설정")
+        
+        st.subheader("📌 X축 설정 (Gate Voltage)")
+        t_x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5, key="t_xmin")
+        t_x_max = st.number_input("X축 최대값 (V)", value=1.0, step=0.5, key="t_xmax")
+        
+        st.subheader("📌 Linear Y축 설정 (Id)")
+        t_y_lin_auto = st.checkbox("Linear Y축 자동 조절", value=True, key="t_ylin_auto")
+        if not t_y_lin_auto:
+            t_y_lin_min = st.number_input("Linear Y축 최소값 (mA/mm)", value=0.0, step=5.0, key="t_ylin_min")
+            t_y_lin_max = st.number_input("Linear Y축 최대값 (mA/mm)", value=200.0, step=10.0, key="t_ylin_max")
+            
+        st.subheader("📌 Log Y축 설정 (|Id|, |Ig|)")
+        t_y_log_auto = st.checkbox("Log Y축 자동 조절", value=True, key="t_ylog_auto")
+        if not t_y_log_auto:
+            t_y_log_min_exp = st.number_input("Log Y축 최소값 (10^x)", value=-8.0, step=1.0, key="t_ylog_min", help="예: -8 입력 시 10^-8")
+            t_y_log_max_exp = st.number_input("Log Y축 최대값 (10^x)", value=2.0, step=1.0, key="t_ylog_max", help="예: 2 입력 시 10^2")
+
+    # 2. Output 축 범위 설정
+    elif analysis_mode == "2. Output 특성 분석":
+        st.header("⚙️ Output 축 범위 설정")
+        
+        st.subheader("📌 X축 설정 (Drain Voltage)")
+        o_x_auto = st.checkbox("X축(Vd) 자동 조절", value=True, key="o_x_auto")
+        if not o_x_auto:
+            o_x_min = st.number_input("X축(Vd) 최소값 (V)", value=0.0, step=0.5, key="o_xmin")
+            o_x_max = st.number_input("X축(Vd) 최대값 (V)", value=5.0, step=0.5, key="o_xmax")
+            
+        st.subheader("📌 Y축 설정 (Drain Current)")
+        o_y_auto = st.checkbox("Y축(Id) 자동 조절", value=True, key="o_y_auto")
+        if not o_y_auto:
+            o_y_min = st.number_input("Y축(Id) 최소값 (mA/mm)", value=0.0, step=5.0, key="o_ymin")
+            o_y_max = st.number_input("Y축(Id) 최대값 (mA/mm)", value=200.0, step=10.0, key="o_ymax")
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
@@ -34,12 +73,18 @@ st.title("📊 반도체 소자 특성 통합 분석 웹앱")
 # [모드 1] Transfer 특성 분석
 # =====================================================================
 if analysis_mode == "1. Transfer 특성 분석":
-    st.markdown("측정 장비에서 얻은 CSV 파일들을 업로드하면, 통합 그래프와 최고 성능 하이라이트 표, 그리고 **단위 변환이 완료된 개별 데이터 엑셀**을 제공합니다.")
+    st.markdown("Transfer CSV 파일들을 업로드하세요. 통합 그래프, 파라미터 비교표, **개별 단위 변환 엑셀**을 제공합니다.")
     
-    uploaded_files = st.file_uploader("Transfer 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="transfer")
+    uploaded_transfer = st.file_uploader("Transfer 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="transfer_uploader")
+    
+    # 파일이 새로 업로드되면 Session State 업데이트
+    if uploaded_transfer:
+        st.session_state['transfer_files_data'] = uploaded_transfer
 
-    if uploaded_files:
-        st.success(f"총 {len(uploaded_files)}개의 파일이 업로드 되었습니다. Transfer 분석을 시작합니다!")
+    files_to_process = st.session_state['transfer_files_data']
+
+    if files_to_process:
+        st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 유지/분석 중입니다.")
 
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -50,11 +95,12 @@ if analysis_mode == "1. Transfer 특성 분석":
         all_summaries = []
         processed_dfs = {}
 
-        for idx, file in enumerate(uploaded_files):
+        for idx, file in enumerate(files_to_process):
             file_name = file.name.replace('.csv', '')
             c = cmap(idx % 10) 
             
             try:
+                file.seek(0) # 파일 포인터 초기화
                 df = pd.read_csv(file, skiprows=1, encoding='cp949')
                 col_vd = 'Drain Voltage (Vd)'
                 col_vg = 'Gate Voltage (Vg)'
@@ -134,20 +180,31 @@ if analysis_mode == "1. Transfer 특성 분석":
             except Exception as e:
                 st.error(f"오류 발생: [{file.name}] 파일 처리 중 문제가 생겼습니다. 에러 메시지: {e}")
 
-        # 그래프 세팅
+        # 그래프 디자인 및 축 범위 적용
         ax1.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax1.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
         ax1_twin.set_ylabel('Transconductance (mS/mm)', fontsize=12, fontweight='bold')
         ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True)
         ax1_twin.tick_params(axis='y', direction='in', labelsize=10, width=1.5)
-        ax1.set_xlim(x_min, x_max)  
+        
+        # X축 범위
+        ax1.set_xlim(t_x_min, t_x_max)  
+        ax2.set_xlim(t_x_min, t_x_max)
+        
+        # Linear Y축 범위 적용
+        if not t_y_lin_auto:
+            ax1.set_ylim(t_y_lin_min, t_y_lin_max)
+            
+        # Log Y축 범위 적용
+        if not t_y_log_auto:
+            ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
+
         ax1.legend(loc='upper left', frameon=True, fontsize=9, title="Solid: $I_d$, Dashed: $G_m$")
 
         ax2.set_yscale('log')
         ax2.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Current (mA/mm)', fontsize=12, fontweight='bold')
         ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
-        ax2.set_xlim(x_min, x_max)
         ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $|I_d|$, Dotted: $|I_g|$")
 
         plt.tight_layout()
@@ -200,12 +257,18 @@ if analysis_mode == "1. Transfer 특성 분석":
 # [모드 2] Output 특성 분석
 # =====================================================================
 elif analysis_mode == "2. Output 특성 분석":
-    st.markdown("Output(출력) 특성 CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선을 시각화하고 단위가 변환된 엑셀을 제공합니다.")
+    st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선을 시각화하고 단위 변환 엑셀을 제공합니다.")
     
-    uploaded_files = st.file_uploader("Output 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="output")
+    uploaded_output = st.file_uploader("Output 데이터 CSV 파일들을 올려주세요.", type=['csv'], accept_multiple_files=True, key="output_uploader")
 
-    if uploaded_files:
-        st.success(f"총 {len(uploaded_files)}개의 파일이 업로드 되었습니다. Output 분석을 시작합니다!")
+    # 파일이 새로 업로드되면 Session State 업데이트
+    if uploaded_output:
+        st.session_state['output_files_data'] = uploaded_output
+
+    files_to_process_out = st.session_state['output_files_data']
+
+    if files_to_process_out:
+        st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
         
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -214,29 +277,26 @@ elif analysis_mode == "2. Output 특성 분석":
         
         processed_dfs_output = {}
 
-        for idx, file in enumerate(uploaded_files):
+        for idx, file in enumerate(files_to_process_out):
             file_name = file.name.replace('.csv', '')
-            c = cmap(idx % 10) # 파일별로 다른 기본 색상 배정
+            c = cmap(idx % 10) 
             
             try:
+                file.seek(0) # 파일 포인터 초기화
                 df = pd.read_csv(file, skiprows=1, encoding='cp949')
                 col_vd = 'Drain Voltage (Vd)'
                 col_vg = 'Gate Voltage (Vg)'
                 col_id_raw = ' Drain Current (Id)'
                 
-                # Id 단위 변환 (A -> mA/mm)
                 df['Id_norm'] = df[col_id_raw] * (1000 / 0.22)
                 
-                # 그래프 그리기 (같은 파일의 Vg 스텝들은 동일한 색상으로 그리되 범례에 Vg 표시)
                 for vg_val, group in df.groupby(col_vg):
                     group = group.sort_values(col_vd)
                     vd_vals = group[col_vd].values
                     id_vals = group['Id_norm'].values
                     
-                    # 선 굵기와 투명도를 살짝 조절해 구분감 형성
                     ax.plot(vd_vals, id_vals, color=c, linewidth=2, label=f"{file_name} ($V_g$={vg_val:g}V)")
 
-                # 엑셀 데이터 가공 (Pivot)
                 pivot_df = df.pivot(index=col_vd, columns=col_vg, values='Id_norm')
                 new_columns = [f'Vg {vg:g}V Drain Current (mA/mm)' for vg in pivot_df.columns]
                 pivot_df.columns = new_columns
@@ -247,12 +307,19 @@ elif analysis_mode == "2. Output 특성 분석":
             except Exception as e:
                 st.error(f"오류 발생: [{file.name}] 파일 처리 중 문제가 생겼습니다. 에러 메시지: {e}")
 
-        # 그래프 디자인
+        # 그래프 디자인 및 축 범위를 수동 조절 설정에 맞게 적용
         ax.set_xlabel('Drain Voltage (V)', fontsize=12, fontweight='bold')
         ax.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
         ax.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
         
-        # 범례가 그래프를 가리지 않도록 바깥쪽(우측)으로 빼기
+        # X축 범위 적용
+        if not o_x_auto:
+            ax.set_xlim(o_x_min, o_x_max)
+            
+        # Y축 범위 적용
+        if not o_y_auto:
+            ax.set_ylim(o_y_min, o_y_max)
+        
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True, fontsize=10)
         plt.tight_layout()
         
