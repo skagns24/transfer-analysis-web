@@ -228,7 +228,7 @@ if analysis_mode == "1. Transfer 특성 분석":
         ax2.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Current (mA/mm)', fontsize=12, fontweight='bold')
         ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
-        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $\vert{}I_d\vert{}$, Dotted: $\vert{}I_g\vert{}$")
+        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $|I_d|$, Dotted: $|I_g|$")
 
         plt.tight_layout()
         st.subheader("📈 통합 Transfer 커브 시각화")
@@ -522,6 +522,47 @@ elif analysis_mode == "3. TLM 특성 분석":
                 ax2.set_ylabel("Total Resistance ($\Omega$)", fontsize=11, fontweight='bold')
                 ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
                 
-                # 그래프 안에 TLM 결과값 텍스트 박스로 표시
-                text_str = f"$R_s$: {Rs:.2f} $\Omega/sq$\n$R_c$: {Rc:.2f} $\Omega$\n$\\rho_c$: {rho_c:.2e} $\Omega\cdot cm^2$"
-                props = dict(boxstyle='round', facecolor
+                # 그래프 안에 TLM 결과값 텍스트 박스로 표시 (파이썬 3.12+ 이스케이프 문자 경고 수정)
+                text_str = f"$R_s$: {Rs:.2f} $\\Omega/sq$\n$R_c$: {Rc:.2f} $\\Omega$\n$\\rho_c$: {rho_c:.2e} $\\Omega\\cdot cm^2$"
+                
+                # 괄호 닫힘 문제 해결 완료된 코드
+                props = dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray')
+                
+                ax2.text(0.05, 0.95, text_str, transform=ax2.transAxes, fontsize=11, verticalalignment='top', bbox=props)
+                ax2.legend(loc='lower right')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # 해당 샘플의 데이터만 다운로드
+                iv_df = pd.DataFrame(iv_data)
+                buf_tlm = BytesIO()
+                with pd.ExcelWriter(buf_tlm, engine='openpyxl') as writer:
+                    iv_df.to_excel(writer, index=False, sheet_name='I-V Data')
+                
+                st.download_button(
+                    label=f"📥 [{group_name}] 전극별 I-V 데이터 다운로드",
+                    data=buf_tlm.getvalue(),
+                    file_name=f"TLM_{group_name}_IV_Data.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_tlm_{group_name}"
+                )
+            
+            # 최종: 분석된 전체 샘플들의 TLM 파라미터를 표로 비교
+            if all_tlm_summaries:
+                st.markdown("---")
+                st.subheader("📋 전체 샘플 TLM 분석 결과 요약 비교")
+                sum_df = pd.DataFrame(all_tlm_summaries)
+                
+                # 접촉 저항(Rc)과 비저항(rho_c)이 가장 낮은(성능이 좋은) 수치를 빨간색 하이라이트
+                def highlight_min_tlm(s):
+                    is_min = s == s.min(skipna=True)
+                    return ['color: red; font-weight: bold' if v else '' for v in is_min]
+                    
+                styled_sum = sum_df.style.apply(highlight_min_tlm, subset=['Contact Resistance, Rc (Ohm)', 'Specific Resistivity, rho_c (Ohm.cm2)']).format({'Specific Resistivity, rho_c (Ohm.cm2)': '{:.4E}'})
+                st.dataframe(styled_sum, use_container_width=True)
+                
+                buf_sum = BytesIO()
+                with pd.ExcelWriter(buf_sum, engine='openpyxl') as writer:
+                    sum_df.to_excel(writer, index=False)
+                st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
