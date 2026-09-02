@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import re
 from io import BytesIO
 
 # 웹페이지 기본 설정 (최상단 배치)
@@ -14,12 +15,15 @@ if 'transfer_files_data' not in st.session_state:
     st.session_state['transfer_files_data'] = []
 if 'output_files_data' not in st.session_state:
     st.session_state['output_files_data'] = []
+if 'tlm_files_data' not in st.session_state:
+    st.session_state['tlm_files_data'] = []
     
-# 파일 업로더 위젯 리셋을 위한 고유 키(Key) 생성
 if 't_uploader_key' not in st.session_state:
     st.session_state['t_uploader_key'] = 0
 if 'o_uploader_key' not in st.session_state:
     st.session_state['o_uploader_key'] = 0
+if 'tlm_uploader_key' not in st.session_state:
+    st.session_state['tlm_uploader_key'] = 0
 
 # ---------------------------------------------------------
 # 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
@@ -28,10 +32,9 @@ with st.sidebar:
     st.title("⚙️ 제어판 (Control Panel)")
     st.markdown("---")
     
-    # 분석 모드 선택
     analysis_mode = st.radio(
         "분석할 데이터 종류를 선택하세요.",
-        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 분석 (추가 예정)"),
+        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 특성 분석"),
         key="selected_mode"
     )
     st.markdown("---")
@@ -74,6 +77,11 @@ with st.sidebar:
             o_y_min = st.number_input("Y축(Id) 최소값 (mA/mm)", value=0.0, step=5.0, key="o_ymin")
             o_y_max = st.number_input("Y축(Id) 최대값 (mA/mm)", value=200.0, step=10.0, key="o_ymax")
 
+    # 3. TLM 설정
+    elif analysis_mode == "3. TLM 특성 분석":
+        st.header("⚙️ TLM 설정")
+        t_w_um = st.number_input("전극 폭 (W, um)", value=220.0, step=10.0, key="tlm_w")
+
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
 
@@ -83,7 +91,6 @@ st.title("📊 반도체 소자 특성 통합 분석 웹앱")
 if analysis_mode == "1. Transfer 특성 분석":
     st.markdown("Transfer CSV 파일들을 업로드하세요. 통합 그래프, 파라미터 비교표, **개별 단위 변환 엑셀**을 제공합니다.")
     
-    # 동적 키(Key)를 사용하여 파일 업로더 렌더링 (초기화 시 리셋됨)
     uploaded_transfer = st.file_uploader(
         "Transfer 데이터 CSV 파일들을 올려주세요.", 
         type=['csv'], 
@@ -91,22 +98,20 @@ if analysis_mode == "1. Transfer 특성 분석":
         key=f"transfer_uploader_{st.session_state['t_uploader_key']}"
     )
     
-    # 파일이 새로 업로드되면 Session State 업데이트
     if uploaded_transfer:
         st.session_state['transfer_files_data'] = uploaded_transfer
 
     files_to_process = st.session_state['transfer_files_data']
 
     if files_to_process:
-        # 삭제 버튼과 안내 문구를 나란히 배치
         col1, col2 = st.columns([8, 2])
         with col1:
             st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 유지/분석 중입니다.")
         with col2:
-            if st.button("🗑️ 전체 파일 삭제", use_container_width=True):
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_t"):
                 st.session_state['transfer_files_data'] = []
-                st.session_state['t_uploader_key'] += 1 # 키를 변경하여 업로더 위젯 리셋
-                st.rerun() # 화면 새로고침
+                st.session_state['t_uploader_key'] += 1 
+                st.rerun() 
 
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -122,7 +127,7 @@ if analysis_mode == "1. Transfer 특성 분석":
             c = cmap(idx % 10) 
             
             try:
-                file.seek(0) # 파일 포인터 초기화
+                file.seek(0)
                 df = pd.read_csv(file, skiprows=1, encoding='cp949')
                 col_vd = 'Drain Voltage (Vd)'
                 col_vg = 'Gate Voltage (Vg)'
@@ -209,16 +214,11 @@ if analysis_mode == "1. Transfer 특성 분석":
         ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True)
         ax1_twin.tick_params(axis='y', direction='in', labelsize=10, width=1.5)
         
-        # X축 수동 범위 적용
         if not t_x_auto:
             ax1.set_xlim(t_x_min, t_x_max)  
             ax2.set_xlim(t_x_min, t_x_max)
-        
-        # Linear Y축 수동 범위 적용
         if not t_y_lin_auto:
             ax1.set_ylim(t_y_lin_min, t_y_lin_max)
-            
-        # Log Y축 수동 범위 적용
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
@@ -228,7 +228,7 @@ if analysis_mode == "1. Transfer 특성 분석":
         ax2.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Current (mA/mm)', fontsize=12, fontweight='bold')
         ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
-        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $|I_d|$, Dotted: $|I_g|$")
+        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $\vert{}I_d\vert{}$, Dotted: $\vert{}I_g\vert{}$")
 
         plt.tight_layout()
         st.subheader("📈 통합 Transfer 커브 시각화")
@@ -282,7 +282,6 @@ if analysis_mode == "1. Transfer 특성 분석":
 elif analysis_mode == "2. Output 특성 분석":
     st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선을 시각화하고 단위 변환 엑셀을 제공합니다.")
     
-    # 동적 키(Key)를 사용하여 파일 업로더 렌더링
     uploaded_output = st.file_uploader(
         "Output 데이터 CSV 파일들을 올려주세요.", 
         type=['csv'], 
@@ -300,10 +299,10 @@ elif analysis_mode == "2. Output 특성 분석":
         with col1:
             st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
         with col2:
-            if st.button("🗑️ 전체 파일 삭제", use_container_width=True):
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_o"):
                 st.session_state['output_files_data'] = []
-                st.session_state['o_uploader_key'] += 1 # 키를 변경하여 업로더 위젯 리셋
-                st.rerun() # 화면 새로고침
+                st.session_state['o_uploader_key'] += 1 
+                st.rerun() 
         
         plt.rcParams['font.family'] = 'Arial'
         plt.rcParams['axes.linewidth'] = 1.5
@@ -317,7 +316,7 @@ elif analysis_mode == "2. Output 특성 분석":
             c = cmap(idx % 10) 
             
             try:
-                file.seek(0) # 파일 포인터 초기화
+                file.seek(0)
                 df = pd.read_csv(file, skiprows=1, encoding='cp949')
                 col_vd = 'Drain Voltage (Vd)'
                 col_vg = 'Gate Voltage (Vg)'
@@ -340,9 +339,8 @@ elif analysis_mode == "2. Output 특성 분석":
                 processed_dfs_output[file_name] = pivot_df
 
             except Exception as e:
-                st.error(f"오류 발생: [{file.name}] 파일 처리 중 문제가 생겼습니다. 에러 메시지: {e}")
+                st.error(f"오류 발생: [{file.name}] 처리 실패 ({e})")
 
-        # 그래프 디자인 및 축 범위 적용
         ax.set_xlabel('Drain Voltage (V)', fontsize=12, fontweight='bold')
         ax.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
         ax.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
@@ -362,7 +360,6 @@ elif analysis_mode == "2. Output 특성 분석":
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
         st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
 
-        # 개별 데이터 다운로드
         if processed_dfs_output:
             st.markdown("---")
             st.subheader("💾 개별 소자 Output 데이터 다운로드 (Pivot 정리본)")
@@ -376,7 +373,155 @@ elif analysis_mode == "2. Output 특성 분석":
                     st.download_button(label=f"📥 {name} 데이터", data=buf_raw.getvalue(), file_name=f"result_{name}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dl_o_{name}")
 
 # =====================================================================
-# [모드 3] TLM 분석
+# [모드 3] TLM 특성 분석
 # =====================================================================
-elif analysis_mode == "3. TLM 분석 (추가 예정)":
-    st.info("TLM(Transmission Line Method) 분석 기능은 다음 업데이트에 바로 추가될 예정입니다!")
+elif analysis_mode == "3. TLM 특성 분석":
+    st.markdown("TLM 측정을 위해 얻은 CSV 파일들을 업로드하세요. **파일 이름에 전극 간격(10, 20, 30, 40, 80) 숫자가 반드시 포함되어야 자동으로 인식됩니다.**")
+    st.info("💡 **샘플 단위 분리 그래프 안내:**\n\n여러 샘플이 섞이는 것을 방지하려면 파일 이름 앞에 **샘플명**을 적어주세요. (예: `SampleA_10.csv`, `SampleA_20.csv` / `SampleB_10.csv`). 프로그램이 이름 앞부분이 같은 파일끼리 묶어서 **각 샘플마다 독립적인 그래프와 결과 표를 별도로 생성**해 줍니다!")
+    
+    uploaded_tlm = st.file_uploader(
+        "TLM 데이터 CSV 파일들을 올려주세요.", 
+        type=['csv'], 
+        accept_multiple_files=True, 
+        key=f"tlm_uploader_{st.session_state['tlm_uploader_key']}"
+    )
+
+    if uploaded_tlm:
+        st.session_state['tlm_files_data'] = uploaded_tlm
+
+    files_to_process_tlm = st.session_state['tlm_files_data']
+
+    if files_to_process_tlm:
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.success(f"현재 {len(files_to_process_tlm)}개의 TLM 파일이 유지/분석 중입니다.")
+        with col2:
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_tlm"):
+                st.session_state['tlm_files_data'] = []
+                st.session_state['tlm_uploader_key'] += 1
+                st.rerun()
+                
+        # 파일 이름을 분석하여 그룹(샘플) 단위로 묶기
+        tlm_groups = {}
+        for file in files_to_process_tlm:
+            basename = file.name
+            match = re.search(r'(?<!\d)(10|20|30|40|80)(?!\d)', basename)
+            if match:
+                gap = int(match.group(1))
+                idx = match.start()
+                prefix = basename[:idx]
+                group_name = re.sub(r'[\_\-\s]+$', '', prefix) # 숫자 앞의 언더바나 공백 제거
+                
+                if not group_name:
+                    group_name = "기본 샘플 (이름 없음)"
+                
+                if group_name not in tlm_groups:
+                    tlm_groups[group_name] = {}
+                tlm_groups[group_name][gap] = file
+                
+        if not tlm_groups:
+            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일을 찾을 수 없습니다. 파일명을 확인해 주세요.")
+        else:
+            plt.rcParams['font.family'] = 'Arial'
+            plt.rcParams['axes.linewidth'] = 1.5
+            
+            all_tlm_summaries = []
+            
+            # 각 샘플 그룹별로 분리해서 그래프 그리기
+            for group_name, gap_dict in tlm_groups.items():
+                gaps_found = sorted(gap_dict.keys())
+                
+                # 최소 4포인트(10~40) 검사
+                if not all(g in gaps_found for g in [10, 20, 30, 40]):
+                    st.warning(f"[{group_name}] 샘플은 TLM 분석을 위해 최소 10, 20, 30, 40 파일이 모두 필요합니다. (현재 업로드된 간격: {gaps_found}um)")
+                    continue
+                    
+                st.markdown("---")
+                st.markdown(f"### 🧪 분석 샘플: **{group_name}**")
+                
+                iv_data = {}
+                R_dict = {}
+                voltages = None
+                
+                # 데이터 파싱
+                for gap in gaps_found:
+                    f = gap_dict[gap]
+                    f.seek(0)
+                    try:
+                        df = pd.read_csv(f, skiprows=1, encoding='cp949')
+                        col_v = [c for c in df.columns if 'Voltage' in c][0]
+                        col_i = [c for c in df.columns if 'Current' in c][0]
+                        col_r = [c for c in df.columns if 'Resistance' in c][0]
+                        
+                        v = df[col_v].values
+                        i_mA = df[col_i].values * 1000 # 전류 mA로 변환
+                        r = df[col_r].values
+                        
+                        if voltages is None:
+                            voltages = v
+                            iv_data['Voltage (V)'] = voltages
+                            
+                        iv_data[f'{gap}um Current (mA)'] = i_mA
+                        
+                        # -0.1V와 0.1V 근처의 최소 저항값 찾기
+                        idx_m01 = np.argmin(np.abs(v - (-0.1)))
+                        idx_p01 = np.argmin(np.abs(v - 0.1))
+                        min_R = min(r[idx_m01], r[idx_p01])
+                        R_dict[gap] = min_R
+                        
+                    except Exception as e:
+                        st.error(f"오류: [{f.name}] 파일 처리 실패 ({e})")
+                        continue
+                        
+                # TLM 핵심 계산 (Linear Regression)
+                L = np.array(gaps_found)
+                R = np.array([R_dict[g] for g in gaps_found])
+                slope, intercept = np.polyfit(L, R, 1)
+                
+                Rs = slope * t_w_um
+                Rc = intercept / 2
+                Lt = intercept / (2 * slope)
+                rho_c = Rs * (Lt * 1e-4)**2 if Lt > 0 else np.nan
+                
+                all_tlm_summaries.append({
+                    'Sample Name': group_name,
+                    'Measured Gaps (um)': str(gaps_found),
+                    'Sheet Resistance, Rs (Ohm/sq)': Rs,
+                    'Contact Resistance, Rc (Ohm)': Rc,
+                    'Specific Resistivity, rho_c (Ohm.cm2)': rho_c,
+                    '10um R (Ohm)': R_dict.get(10),
+                    '20um R (Ohm)': R_dict.get(20),
+                    '30um R (Ohm)': R_dict.get(30),
+                    '40um R (Ohm)': R_dict.get(40),
+                    '80um R (Ohm)': R_dict.get(80)
+                })
+                
+                # 시각화: 독립적인 1행 2열 그래프 생성
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+                cmap = plt.colormaps['tab10']
+                
+                # 왼쪽(ax1): Ohmic 확인용 I-V 플롯
+                for idx, gap in enumerate(gaps_found):
+                    if f'{gap}um Current (mA)' in iv_data:
+                        ax1.plot(iv_data['Voltage (V)'], iv_data[f'{gap}um Current (mA)'], color=cmap(idx % 10), linewidth=2, label=f'{gap} $\mu m$')
+                        
+                ax1.set_title("Ohmic Characteristics (I-V)", fontsize=13, fontweight='bold')
+                ax1.set_xlabel("Voltage (V)", fontsize=11, fontweight='bold')
+                ax1.set_ylabel("Current (mA)", fontsize=11, fontweight='bold')
+                ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
+                ax1.legend()
+                
+                # 오른쪽(ax2): TLM (R vs L) 플롯
+                ax2.plot(L, R, 'ko', markersize=8, label='Measured Resistance')
+                L_line = np.array([0, max(L)]) # 0부터 최대 간격(40 or 80)까지 선 그리기
+                R_line = slope * L_line + intercept
+                ax2.plot(L_line, R_line, 'r--', linewidth=2, label=f'Linear Fit (R² ≒ {np.corrcoef(L, R)[0,1]**2:.4f})')
+                
+                ax2.set_title("TLM Plot (Resistance vs Gap)", fontsize=13, fontweight='bold')
+                ax2.set_xlabel("Gap Distance ($\mu m$)", fontsize=11, fontweight='bold')
+                ax2.set_ylabel("Total Resistance ($\Omega$)", fontsize=11, fontweight='bold')
+                ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
+                
+                # 그래프 안에 TLM 결과값 텍스트 박스로 표시
+                text_str = f"$R_s$: {Rs:.2f} $\Omega/sq$\n$R_c$: {Rc:.2f} $\Omega$\n$\\rho_c$: {rho_c:.2e} $\Omega\cdot cm^2$"
+                props = dict(boxstyle='round', facecolor
