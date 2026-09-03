@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from io import BytesIO
-from scipy.signal import savgol_filter # [추가됨] 스무딩 필터용 라이브러리
+from scipy.signal import savgol_filter
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
@@ -58,14 +58,13 @@ with st.sidebar:
             t_y_log_min_exp = st.number_input("Log Y축 최소값 (10^x)", value=-8.0, step=1.0, key="t_ylog_min")
             t_y_log_max_exp = st.number_input("Log Y축 최대값 (10^x)", value=2.0, step=1.0, key="t_ylog_max")
 
-        # [추가됨] Gm 데이터 스무딩 설정
         st.markdown("---")
         st.subheader("📌 Gm 노이즈 필터링 (Savitzky-Golay)")
-        apply_smoothing = st.checkbox("Gm 노이즈 필터링 적용", value=False, key="apply_smoothing", help="체크하면 Gm 데이터의 노이즈를 제거하여 더 정확한 최대값을 추출합니다.")
+        apply_smoothing = st.checkbox("Gm 노이즈 필터링 적용", value=False, key="apply_smoothing", help="체크하면 엑셀 다운로드 시 'Smoothed Gm' 열이 추가됩니다.")
         
         if apply_smoothing:
-            window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window", help="값이 클수록 그래프가 더 부드러워집니다. (기본값: 11)")
-            poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly", help="피크(Peak)의 모양을 보존하는 정도입니다. (기본값: 2)")
+            window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window")
+            poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly")
 
     # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
@@ -165,7 +164,6 @@ if analysis_mode == "1. Transfer 특성 분석":
                 col_ig_norm_abs = '|Gate Current| (mA/mm)'
                 df[col_ig_norm_abs] = np.abs(df[col_ig_raw] * (1000 / 0.22))
                 
-                df['Gm (mS/mm)'] = np.nan
                 summary_list = []
                 
                 for vd, group in df.groupby(col_vd):
@@ -175,18 +173,19 @@ if analysis_mode == "1. Transfer 특성 분석":
                     id_abs = np.abs(id_norm)
                     ig_abs = group[col_ig_norm_abs].values
                     
-                    # [수정됨] Gm 원본 도출 및 스무딩(필터링) 로직 적용
+                    # Gm 원본 추출
                     gm_raw = np.gradient(id_norm, vg)
+                    df.loc[group.index, 'Raw Gm (mS/mm)'] = gm_raw
                     
+                    # 스무딩(필터링) 적용 여부에 따른 최종 Gm 선택 및 엑셀 데이터 저장
                     if apply_smoothing and len(gm_raw) > window_length:
                         actual_poly = min(poly_order, window_length - 1)
                         gm_final = savgol_filter(gm_raw, window_length, actual_poly)
+                        df.loc[group.index, 'Smoothed Gm (mS/mm)'] = gm_final
                     else:
                         gm_final = gm_raw
-
-                    df.loc[group.index, 'Gm (mS/mm)'] = gm_final
                     
-                    # 그래프 시각화 (스무딩 시 원본 노이즈도 희미하게 표시)
+                    # 그래프 시각화
                     label_name = f"{file_name}"
                     ax1.plot(vg, id_norm, label=label_name, color=c, linewidth=2)
                     
@@ -199,7 +198,7 @@ if analysis_mode == "1. Transfer 특성 분석":
                     ax2.plot(vg, id_abs, label=label_name, color=c, linewidth=2)
                     ax2.plot(vg, ig_abs, color=c, linestyle=':', linewidth=2, alpha=0.6)
 
-                    # 노이즈가 제거된 최적화된 데이터로 파라미터 추출
+                    # 파라미터 추출
                     gm_max = np.max(gm_final)
                     id_max = np.max(id_norm)
                     idx_max_gm = np.argmax(gm_final)
@@ -241,7 +240,12 @@ if analysis_mode == "1. Transfer 특성 분석":
                         'On/Off Ratio': on_off_ratio
                     })
                     
-                main_df = df[[col_vg, col_id_norm, col_ig_norm_abs, col_vd, 'Gm (mS/mm)']].reset_index(drop=True)
+                # 엑셀 다운로드용 데이터프레임 정리 (옵션에 따라 Smoothed Gm 포함)
+                cols_to_export = [col_vg, col_id_norm, col_ig_norm_abs, col_vd, 'Raw Gm (mS/mm)']
+                if apply_smoothing and 'Smoothed Gm (mS/mm)' in df.columns:
+                    cols_to_export.append('Smoothed Gm (mS/mm)')
+                    
+                main_df = df[cols_to_export].reset_index(drop=True)
                 sum_df = pd.DataFrame(summary_list).reset_index(drop=True)
                 processed_dfs[file_name] = pd.concat([main_df, sum_df], axis=1)
 
@@ -262,7 +266,7 @@ if analysis_mode == "1. Transfer 특성 분석":
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
-        # 범례 표시 변경
+        # 범례 동적 변경
         legend_title = "Solid: $I_d$, Dashed: Smoothed $G_m$, Dotted: Raw $G_m$" if apply_smoothing else "Solid: $I_d$, Dashed: $G_m$"
         ax1.legend(loc='upper left', frameon=True, fontsize=9, title=legend_title)
 
