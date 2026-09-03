@@ -681,7 +681,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                 with pd.ExcelWriter(buf_sum, engine='openpyxl') as writer:
                     sum_df.to_excel(writer, index=False)
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
 # 기존 코드 (약 134번째 줄 근처)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
