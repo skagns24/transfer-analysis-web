@@ -449,7 +449,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                 R_dict = {}
                 voltages = None
                 
-                # 기존 방식: -0.1V와 0.1V 지점의 최솟값을 R로 채택
                 for gap in gaps_found:
                     f = gap_dict[gap]
                     f.seek(0)
@@ -478,7 +477,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                         st.error(f"오류: [{f.name}] 파일 처리 실패 ({e})")
                         continue
                         
-                # TLM 파라미터 계산
                 L = np.array(gaps_found)
                 R = np.array([R_dict[g] for g in gaps_found])
                 slope, intercept = np.polyfit(L, R, 1)
@@ -501,7 +499,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                     '80um R (Ohm)': R_dict.get(80)
                 })
                 
-                # 시각화 (1행 2열)
                 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
                 cmap = plt.colormaps['tab10']
                 
@@ -514,7 +511,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                 ax1.set_ylabel("Current (mA)", fontsize=11, fontweight='bold')
                 ax1.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
                 
-                # [추가됨] Ohmic I-V X축/Y축 수동 범위 적용
                 if not tlm_x_auto:
                     ax1.set_xlim(tlm_x_min, tlm_x_max)
                 if not tlm_y_auto:
@@ -522,7 +518,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                     
                 ax1.legend()
                 
-                # TLM (R vs Gap) 플롯
                 ax2.plot(L, R, 'ko', markersize=8, label='Measured Resistance')
                 L_line = np.array([0, max(L)]) 
                 R_line = slope * L_line + intercept
@@ -541,7 +536,6 @@ elif analysis_mode == "3. TLM 특성 분석":
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # [추가됨] 그래프 이미지 다운로드 버튼 & 데이터 다운로드 버튼
                 col_dl1, col_dl2 = st.columns(2)
                 
                 buf_img_tlm = BytesIO()
@@ -573,11 +567,21 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.subheader("📋 전체 샘플 TLM 분석 결과 요약 비교")
                 sum_df = pd.DataFrame(all_tlm_summaries)
                 
+                # 수정됨: s.max()가 아닌 s.min()을 사용하여 최소값에 하이라이트 적용
                 def highlight_min_tlm(s):
-                    is_min = s == s.max(skipna=True) # 최소값에 하이라이트
+                    is_min = s == s.min(skipna=True) 
                     return ['color: red; font-weight: bold' if v else '' for v in is_min]
                     
-                styled_sum = sum_df.style.apply(highlight_min_tlm, subset=['Contact Resistance, Rc (Ohm)', 'Specific Resistivity, rho_c (Ohm.cm2)']).format({'Specific Resistivity, rho_c (Ohm.cm2)': '{:.4E}'})
+                # 수정됨: Rs, Rc, rho_c 3개 열 모두 선택하여 하이라이트 적용
+                styled_sum = sum_df.style.apply(
+                    highlight_min_tlm, 
+                    subset=[
+                        'Sheet Resistance, Rs (Ohm/sq)', 
+                        'Contact Resistance, Rc (Ohm)', 
+                        'Specific Resistivity, rho_c (Ohm.cm2)'
+                    ]
+                ).format({'Specific Resistivity, rho_c (Ohm.cm2)': '{:.4E}'})
+                
                 st.dataframe(styled_sum, use_container_width=True)
                 
                 buf_sum = BytesIO()
