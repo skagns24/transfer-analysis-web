@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from io import BytesIO
+import google.generativeai as genai # AI 기능을 위한 라이브러리 추가
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
@@ -25,8 +26,12 @@ if 'o_uploader_key' not in st.session_state:
 if 'tlm_uploader_key' not in st.session_state:
     st.session_state['tlm_uploader_key'] = 0
 
+# AI 챗봇 대화 기록 초기화
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = [{"role": "assistant", "content": "안녕하세요! 반도체 소자 특성이나 데이터 해석에 대해 무엇이든 물어보세요. (예: 'TiN 열처리 시 Rc가 증가하는 원인이 뭘까?')\n\n*사용 전 위에 API Key를 먼저 입력해 주세요.*"}]
+
 # ---------------------------------------------------------
-# 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
+# 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러 + AI 챗봇
 # ---------------------------------------------------------
 with st.sidebar:
     st.title("⚙️ 제어판 (Control Panel)")
@@ -96,6 +101,44 @@ with st.sidebar:
         if not tlm_y_auto:
             tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
+
+    # ==========================================
+    # 🤖 사이드바 하단: AI 연구 어시스턴트 (Gemini)
+    # ==========================================
+    st.markdown("---")
+    st.header("🤖 AI 연구 어시스턴트")
+    
+    # 깃허브 코드 노출 방지를 위한 비밀번호(password) 타입 입력칸
+    api_key = st.text_input("🔑 Gemini API Key 입력", type="password", help="발급받은 구글 Gemini API 키를 넣어주세요. 보안을 위해 화면에 별표(*)로 표시되며 서버에 저장되지 않습니다.")
+    
+    # 대화창 영역 (스크롤 가능하게 높이 제한)
+    with st.container(height=350):
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+    # 질문 입력칸
+    if prompt := st.chat_input("데이터 해석이나 궁금한 점을 질문하세요!"):
+        if not api_key:
+            st.error("앗! 위 칸에 API Key를 먼저 입력해주세요.")
+        else:
+            # 내 질문 추가
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            
+            try:
+                # Gemini AI 세팅 및 답변 요청
+                genai.configure(api_key=api_key)
+                # 성능이 빠르고 똑똑한 1.5 Flash 모델 사용
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                response = model.generate_content(prompt)
+                
+                # AI 답변 추가
+                st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+            except Exception as e:
+                st.session_state.chat_history.append({"role": "assistant", "content": f"🚨 오류가 발생했습니다. API Key가 정확한지 확인해주세요! (에러내용: {e})"})
+            
+            # 대화 내역 업데이트를 위한 새로고침
+            st.rerun()
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
@@ -322,7 +365,7 @@ elif analysis_mode == "2. Output 특성 분석":
         cmap = plt.colormaps['tab10'] 
         
         processed_dfs_output = {}
-        output_summaries = [] # [추가됨] Ron 저장을 위한 리스트
+        output_summaries = []
 
         for idx, file in enumerate(files_to_process_out):
             file_name = file.name.replace('.csv', '')
@@ -337,7 +380,6 @@ elif analysis_mode == "2. Output 특성 분석":
                 
                 df['Id_norm'] = df[col_id_raw] * (1000 / 0.22)
                 
-                # [추가됨] 입력한 Target Vg와 가장 가까운 실제 Vg 찾기
                 unique_vgs = df[col_vg].unique()
                 closest_vg = unique_vgs[np.argmin(np.abs(unique_vgs - target_vg))]
                 
@@ -352,7 +394,6 @@ elif analysis_mode == "2. Output 특성 분석":
                     
                     ax.plot(vd_vals, id_vals, color=c, linewidth=2, label=f"{file_name} ($V_g$={vg_val:g}V)")
 
-                    # [추가됨] 해당 Vg 곡선에서 0~0.5V 대역을 찾아 Linear Fitting (Ron 계산)
                     if vg_val == closest_vg:
                         mask = (vd_vals >= 0.0) & (vd_vals <= 0.5)
                         if np.sum(mask) >= 2:
@@ -360,18 +401,14 @@ elif analysis_mode == "2. Output 특성 분석":
                             if slope > 0:
                                 file_slope = slope
                                 file_intercept = intercept
-                                # R = 1 / slope. mA/mm -> A/mm 단위 환산으로 1000을 곱함 (결과: Ohm*mm)
                                 file_ron = (1 / slope) * 1000 
                                 
-                # [추가됨] 피팅 완료 후 빨간 점선(Linear fit line) 그리기
                 if not np.isnan(file_slope):
                     max_i_global = df['Id_norm'].max()
-                    # 점선이 그래프 위로 뚫고 나가지 않게 길이 조절
                     v_max_line = (max_i_global * 1.1 - file_intercept) / file_slope if file_slope > 0 else max(df[col_vd])
                     v_line = np.linspace(0, min(v_max_line, max(df[col_vd])), 10)
                     i_line = file_slope * v_line + file_intercept
                     
-                    # 파일이 여러 개일 때는 헷갈리지 않게 파일 고유 색상(c) 사용, 1개일 때는 예시처럼 빨간색
                     line_color = 'red' if len(files_to_process_out) == 1 else c
                     ax.plot(v_line, i_line, color=line_color, linestyle='--', linewidth=1.5, label=f"Linear fit ($R_{{on}}$: {file_ron:.1f} $\Omega\cdot mm$)")
 
@@ -382,7 +419,6 @@ elif analysis_mode == "2. Output 특성 분석":
                 
                 processed_dfs_output[file_name] = pivot_df
                 
-                # 요약 표에 데이터 저장
                 output_summaries.append({
                     'Sample Name': file_name,
                     'Analyzed Vg (V)': closest_vg,
@@ -411,7 +447,6 @@ elif analysis_mode == "2. Output 특성 분석":
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
         st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
 
-        # [추가됨] On-Resistance 요약 표 출력
         if output_summaries:
             st.markdown("---")
             st.subheader("📋 소자별 On-Resistance ($R_{on}$) 요약 비교")
@@ -421,7 +456,6 @@ elif analysis_mode == "2. Output 특성 분석":
                 is_min = s == s.min(skipna=True)
                 return ['color: red; font-weight: bold' if v else '' for v in is_min]
                 
-            # 가장 온저항이 낮은(좋은) 값에 빨간색 하이라이트
             styled_out_sum = out_sum_df.style.apply(highlight_min_ron, subset=['On-Resistance, Ron (Ohm.mm)'])
             st.dataframe(styled_out_sum, use_container_width=True)
             
