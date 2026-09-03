@@ -26,7 +26,7 @@ if 'o_uploader_key' not in st.session_state:
 if 'tlm_uploader_key' not in st.session_state:
     st.session_state['tlm_uploader_key'] = 0
 
-# AI 챗봇 대화 기록 초기화 (내부 채팅 세션 객체 보관용)
+# AI 챗봇 대화 기록 초기화
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "안녕하세요! 저는 반도체 데이터 분석 어시스턴트입니다. 위에 API Key를 입력하시고 질문을 남겨주세요."}]
 if "chat_session" not in st.session_state:
@@ -98,49 +98,53 @@ with st.sidebar:
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
     # ==========================================
-    # 🤖 사이드바 하단: 최신 API 기반 AI 연구 어시스턴트
+    # 🤖 사이드바 하단: AI 연구 어시스턴트 (Auto-Detect 모델)
     # ==========================================
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
     
     api_key = st.text_input("🔑 Gemini API Key 입력", type="password", key="ai_key")
     
-    # 대화창 렌더링
     with st.container(height=400):
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-    # 새 질문 입력
     if prompt := st.chat_input("질문을 입력하세요..."):
         if not api_key:
             st.error("API Key를 먼저 입력해 주세요!")
         else:
-            # 화면에 내 질문 표시
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # API 키 등록 및 모델 초기화 (에러 방지를 위해 gemini-1.5-pro 최신 호출 방식 사용)
             try:
                 genai.configure(api_key=api_key)
-                # 모델명 변경: gemini-1.5-pro 지원 안될시 자동 fallback
-                model = genai.GenerativeModel("gemini-1.5-pro-latest")
                 
-                # 이전 대화를 기억하는 채팅 세션 유지
+                # [핵심 수정] 내 API 키로 쓸 수 있는 모델을 '자동 검색'해서 가장 좋은 걸 고르는 로직
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                
+                if 'models/gemini-1.5-flash' in available_models:
+                    model_name = 'gemini-1.5-flash'
+                elif 'models/gemini-1.5-pro' in available_models:
+                    model_name = 'gemini-1.5-pro'
+                elif 'models/gemini-pro' in available_models:
+                    model_name = 'gemini-pro'
+                else:
+                    # 위 모델들이 없으면 목록에 있는 첫 번째 텍스트 생성 모델 강제 할당
+                    model_name = available_models[0].replace('models/', '') if available_models else 'gemini-pro'
+                    
+                model = genai.GenerativeModel(model_name)
+                
                 if st.session_state.chat_session is None:
                     st.session_state.chat_session = model.start_chat(history=[])
                 
-                # 응답 요청
                 response = st.session_state.chat_session.send_message(prompt)
-                
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
                 st.rerun()
                 
             except Exception as e:
-                # 에러 발생 시 구체적인 메시지 출력
-                error_msg = f"⚠️ 구글 서버 응답 오류가 발생했습니다.\n\n{e}"
+                error_msg = f"⚠️ 서버 연결 오류가 발생했습니다. (자동 검색된 모델이 키와 호환되지 않음)\n\n상세 에러: {e}"
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
                 st.rerun()
-
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
@@ -525,7 +529,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 tlm_groups[group_name][gap] = file
                 
         if not tlm_groups:
-            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일 찾을 수 없습니다. 파일명을 확인해 주세요.")
+            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일을 찾을 수 없습니다. 파일명을 확인해 주세요.")
         else:
             plt.rcParams['font.family'] = 'Arial'
             plt.rcParams['axes.linewidth'] = 1.5
