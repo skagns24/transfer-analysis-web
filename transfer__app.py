@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from io import BytesIO
+from scipy.signal import savgol_filter # [추가됨] 스무딩 필터용 라이브러리
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
@@ -56,6 +57,15 @@ with st.sidebar:
         if not t_y_log_auto:
             t_y_log_min_exp = st.number_input("Log Y축 최소값 (10^x)", value=-8.0, step=1.0, key="t_ylog_min")
             t_y_log_max_exp = st.number_input("Log Y축 최대값 (10^x)", value=2.0, step=1.0, key="t_ylog_max")
+
+        # [추가됨] Gm 데이터 스무딩 설정
+        st.markdown("---")
+        st.subheader("📌 Gm 노이즈 필터링 (Savitzky-Golay)")
+        apply_smoothing = st.checkbox("Gm 노이즈 필터링 적용", value=False, key="apply_smoothing", help="체크하면 Gm 데이터의 노이즈를 제거하여 더 정확한 최대값을 추출합니다.")
+        
+        if apply_smoothing:
+            window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window", help="값이 클수록 그래프가 더 부드러워집니다. (기본값: 11)")
+            poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly", help="피크(Peak)의 모양을 보존하는 정도입니다. (기본값: 2)")
 
     # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
@@ -165,19 +175,34 @@ if analysis_mode == "1. Transfer 특성 분석":
                     id_abs = np.abs(id_norm)
                     ig_abs = group[col_ig_norm_abs].values
                     
-                    gm = np.gradient(id_norm, vg)
-                    df.loc[group.index, 'Gm (mS/mm)'] = gm
+                    # [수정됨] Gm 원본 도출 및 스무딩(필터링) 로직 적용
+                    gm_raw = np.gradient(id_norm, vg)
                     
+                    if apply_smoothing and len(gm_raw) > window_length:
+                        actual_poly = min(poly_order, window_length - 1)
+                        gm_final = savgol_filter(gm_raw, window_length, actual_poly)
+                    else:
+                        gm_final = gm_raw
+
+                    df.loc[group.index, 'Gm (mS/mm)'] = gm_final
+                    
+                    # 그래프 시각화 (스무딩 시 원본 노이즈도 희미하게 표시)
                     label_name = f"{file_name}"
                     ax1.plot(vg, id_norm, label=label_name, color=c, linewidth=2)
-                    ax1_twin.plot(vg, gm, color=c, linestyle='--', linewidth=2, alpha=0.6)
+                    
+                    if apply_smoothing and len(gm_raw) > window_length:
+                        ax1_twin.plot(vg, gm_raw, color=c, linestyle=':', linewidth=1.5, alpha=0.3) # 원본(흐리게)
+                        ax1_twin.plot(vg, gm_final, color=c, linestyle='--', linewidth=2.5, alpha=0.8) # 필터링됨(진하게)
+                    else:
+                        ax1_twin.plot(vg, gm_final, color=c, linestyle='--', linewidth=2, alpha=0.6)
                     
                     ax2.plot(vg, id_abs, label=label_name, color=c, linewidth=2)
                     ax2.plot(vg, ig_abs, color=c, linestyle=':', linewidth=2, alpha=0.6)
 
-                    gm_max = np.max(gm)
+                    # 노이즈가 제거된 최적화된 데이터로 파라미터 추출
+                    gm_max = np.max(gm_final)
                     id_max = np.max(id_norm)
-                    idx_max_gm = np.argmax(gm)
+                    idx_max_gm = np.argmax(gm_final)
                     vth_linear = vg[idx_max_gm] - (id_norm[idx_max_gm] / gm_max)
                     
                     def find_vth_cc(target_current):
@@ -237,7 +262,9 @@ if analysis_mode == "1. Transfer 특성 분석":
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
-        ax1.legend(loc='upper left', frameon=True, fontsize=9, title="Solid: $I_d$, Dashed: $G_m$")
+        # 범례 표시 변경
+        legend_title = "Solid: $I_d$, Dashed: Smoothed $G_m$, Dotted: Raw $G_m$" if apply_smoothing else "Solid: $I_d$, Dashed: $G_m$"
+        ax1.legend(loc='upper left', frameon=True, fontsize=9, title=legend_title)
 
         ax2.set_yscale('log')
         ax2.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
