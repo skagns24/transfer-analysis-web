@@ -4,13 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from io import BytesIO
-import google.generativeai as genai # AI 기능을 위한 라이브러리 추가
+import google.generativeai as genai
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
 
 # ---------------------------------------------------------
-# Session State 초기화 (탭 전환 시 데이터 유지 및 초기화용)
+# Session State 초기화
 # ---------------------------------------------------------
 if 'transfer_files_data' not in st.session_state:
     st.session_state['transfer_files_data'] = []
@@ -26,9 +26,11 @@ if 'o_uploader_key' not in st.session_state:
 if 'tlm_uploader_key' not in st.session_state:
     st.session_state['tlm_uploader_key'] = 0
 
-# AI 챗봇 대화 기록 초기화
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = [{"role": "assistant", "content": "안녕하세요! 반도체 소자 특성이나 데이터 해석에 대해 무엇이든 물어보세요. (예: 'TiN 열처리 시 Rc가 증가하는 원인이 뭘까?')\n\n*사용 전 위에 API Key를 먼저 입력해 주세요.*"}]
+# AI 챗봇 대화 기록 초기화 (내부 채팅 세션 객체 보관용)
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [{"role": "assistant", "content": "안녕하세요! 저는 반도체 데이터 분석 어시스턴트입니다. 위에 API Key를 입력하시고 질문을 남겨주세요."}]
+if "chat_session" not in st.session_state:
+    st.session_state["chat_session"] = None
 
 # ---------------------------------------------------------
 # 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러 + AI 챗봇
@@ -47,43 +49,36 @@ with st.sidebar:
     # 1. Transfer 축 범위 설정
     if analysis_mode == "1. Transfer 특성 분석":
         st.header("⚙️ Transfer 축 범위 설정")
-        
-        st.subheader("📌 X축 설정 (Gate Voltage)")
         t_x_auto = st.checkbox("X축 자동 조절", value=True, key="t_x_auto")
         if not t_x_auto:
             t_x_min = st.number_input("X축 최소값 (V)", value=-5.0, step=0.5, key="t_xmin")
             t_x_max = st.number_input("X축 최대값 (V)", value=1.0, step=0.5, key="t_xmax")
         
-        st.subheader("📌 Linear Y축 설정 (Id)")
         t_y_lin_auto = st.checkbox("Linear Y축 자동 조절", value=True, key="t_ylin_auto")
         if not t_y_lin_auto:
             t_y_lin_min = st.number_input("Linear Y축 최소값 (mA/mm)", value=0.0, step=5.0, key="t_ylin_min")
             t_y_lin_max = st.number_input("Linear Y축 최대값 (mA/mm)", value=200.0, step=10.0, key="t_ylin_max")
             
-        st.subheader("📌 Log Y축 설정 (|Id|, |Ig|)")
         t_y_log_auto = st.checkbox("Log Y축 자동 조절", value=True, key="t_ylog_auto")
         if not t_y_log_auto:
-            t_y_log_min_exp = st.number_input("Log Y축 최소값 (10^x)", value=-8.0, step=1.0, key="t_ylog_min", help="예: -8 입력 시 10^-8")
-            t_y_log_max_exp = st.number_input("Log Y축 최대값 (10^x)", value=2.0, step=1.0, key="t_ylog_max", help="예: 2 입력 시 10^2")
+            t_y_log_min_exp = st.number_input("Log Y축 최소값 (10^x)", value=-8.0, step=1.0, key="t_ylog_min")
+            t_y_log_max_exp = st.number_input("Log Y축 최대값 (10^x)", value=2.0, step=1.0, key="t_ylog_max")
 
     # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
         st.header("⚙️ Output 축 범위 설정")
-        
-        st.subheader("📌 X축 설정 (Drain Voltage)")
         o_x_auto = st.checkbox("X축(Vd) 자동 조절", value=True, key="o_x_auto")
         if not o_x_auto:
             o_x_min = st.number_input("X축(Vd) 최소값 (V)", value=0.0, step=0.5, key="o_xmin")
             o_x_max = st.number_input("X축(Vd) 최대값 (V)", value=5.0, step=0.5, key="o_xmax")
             
-        st.subheader("📌 Y축 설정 (Drain Current)")
         o_y_auto = st.checkbox("Y축(Id) 자동 조절", value=True, key="o_y_auto")
         if not o_y_auto:
             o_y_min = st.number_input("Y축(Id) 최소값 (mA/mm)", value=0.0, step=5.0, key="o_ymin")
             o_y_max = st.number_input("Y축(Id) 최대값 (mA/mm)", value=200.0, step=10.0, key="o_ymax")
             
         st.subheader("📌 온저항(Ron) 분석 설정")
-        target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg", help="해당 Vg와 가장 가까운 곡선을 찾아 0~0.5V 구간에서 선형 피팅을 수행합니다.")
+        target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg")
 
     # 3. TLM 설정
     elif analysis_mode == "3. TLM 특성 분석":
@@ -103,42 +98,49 @@ with st.sidebar:
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
     # ==========================================
-    # 🤖 사이드바 하단: AI 연구 어시스턴트 (Gemini)
+    # 🤖 사이드바 하단: 최신 API 기반 AI 연구 어시스턴트
     # ==========================================
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
     
-    # 깃허브 코드 노출 방지를 위한 비밀번호(password) 타입 입력칸
-    api_key = st.text_input("🔑 Gemini API Key 입력", type="password", help="발급받은 구글 Gemini API 키를 넣어주세요. 보안을 위해 화면에 별표(*)로 표시되며 서버에 저장되지 않습니다.")
+    api_key = st.text_input("🔑 Gemini API Key 입력", type="password", key="ai_key")
     
-    # 대화창 영역 (스크롤 가능하게 높이 제한)
-    with st.container(height=350):
-        for msg in st.session_state.chat_history:
+    # 대화창 렌더링
+    with st.container(height=400):
+        for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
                 
-    # 질문 입력칸
-    if prompt := st.chat_input("데이터 해석이나 궁금한 점을 질문하세요!"):
+    # 새 질문 입력
+    if prompt := st.chat_input("질문을 입력하세요..."):
         if not api_key:
-            st.error("앗! 위 칸에 API Key를 먼저 입력해주세요.")
+            st.error("API Key를 먼저 입력해 주세요!")
         else:
-            # 내 질문 추가
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            # 화면에 내 질문 표시
+            st.session_state.messages.append({"role": "user", "content": prompt})
             
+            # API 키 등록 및 모델 초기화 (에러 방지를 위해 gemini-1.5-pro 최신 호출 방식 사용)
             try:
-                # Gemini AI 세팅 및 답변 요청
                 genai.configure(api_key=api_key)
-                # 성능이 빠르고 똑똑한 1.5 Flash 모델 사용
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(prompt)
+                # 모델명 변경: gemini-1.5-pro 지원 안될시 자동 fallback
+                model = genai.GenerativeModel("gemini-1.5-pro-latest")
                 
-                # AI 답변 추가
-                st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                # 이전 대화를 기억하는 채팅 세션 유지
+                if st.session_state.chat_session is None:
+                    st.session_state.chat_session = model.start_chat(history=[])
+                
+                # 응답 요청
+                response = st.session_state.chat_session.send_message(prompt)
+                
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                st.rerun()
+                
             except Exception as e:
-                st.session_state.chat_history.append({"role": "assistant", "content": f"🚨 오류가 발생했습니다. API Key가 정확한지 확인해주세요! (에러내용: {e})"})
-            
-            # 대화 내역 업데이트를 위한 새로고침
-            st.rerun()
+                # 에러 발생 시 구체적인 메시지 출력
+                error_msg = f"⚠️ 구글 서버 응답 오류가 발생했습니다.\n\n{e}"
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.rerun()
+
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
@@ -523,7 +525,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 tlm_groups[group_name][gap] = file
                 
         if not tlm_groups:
-            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일을 찾을 수 없습니다. 파일명을 확인해 주세요.")
+            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일 찾을 수 없습니다. 파일명을 확인해 주세요.")
         else:
             plt.rcParams['font.family'] = 'Arial'
             plt.rcParams['axes.linewidth'] = 1.5
@@ -681,8 +683,3 @@ elif analysis_mode == "3. TLM 특성 분석":
                 with pd.ExcelWriter(buf_sum, engine='openpyxl') as writer:
                     sum_df.to_excel(writer, index=False)
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-# 기존 코드 (약 134번째 줄 근처)
-model = genai.GenerativeModel('gemini-1.5-flash')
-
-# 수정할 코드
-model = genai.GenerativeModel('gemini-pro')
