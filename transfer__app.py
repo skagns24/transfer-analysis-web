@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import re
 from io import BytesIO
-import google.generativeai as genai
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
@@ -26,14 +25,8 @@ if 'o_uploader_key' not in st.session_state:
 if 'tlm_uploader_key' not in st.session_state:
     st.session_state['tlm_uploader_key'] = 0
 
-# AI 챗봇 대화 기록 초기화
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "안녕하세요! 저는 반도체 데이터 분석 어시스턴트입니다. 위에 API Key를 입력하시고 질문을 남겨주세요."}]
-if "chat_session" not in st.session_state:
-    st.session_state["chat_session"] = None
-
 # ---------------------------------------------------------
-# 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러 + AI 챗봇
+# 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
 # ---------------------------------------------------------
 with st.sidebar:
     st.title("⚙️ 제어판 (Control Panel)")
@@ -98,53 +91,12 @@ with st.sidebar:
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
     # ==========================================
-    # 🤖 사이드바 하단: AI 연구 어시스턴트 (Auto-Detect 모델)
+    # 🤖 사이드바 하단: 외부 Gemini 창 열기 버튼
     # ==========================================
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
-    
-    api_key = st.text_input("🔑 Gemini API Key 입력", type="password", key="ai_key")
-    
-    with st.container(height=400):
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                
-    if prompt := st.chat_input("질문을 입력하세요..."):
-        if not api_key:
-            st.error("API Key를 먼저 입력해 주세요!")
-        else:
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            
-            try:
-                genai.configure(api_key=api_key)
-                
-                # [핵심 수정] 내 API 키로 쓸 수 있는 모델을 '자동 검색'해서 가장 좋은 걸 고르는 로직
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                
-                if 'models/gemini-1.5-flash' in available_models:
-                    model_name = 'gemini-1.5-flash'
-                elif 'models/gemini-1.5-pro' in available_models:
-                    model_name = 'gemini-1.5-pro'
-                elif 'models/gemini-pro' in available_models:
-                    model_name = 'gemini-pro'
-                else:
-                    # 위 모델들이 없으면 목록에 있는 첫 번째 텍스트 생성 모델 강제 할당
-                    model_name = available_models[0].replace('models/', '') if available_models else 'gemini-pro'
-                    
-                model = genai.GenerativeModel(model_name)
-                
-                if st.session_state.chat_session is None:
-                    st.session_state.chat_session = model.start_chat(history=[])
-                
-                response = st.session_state.chat_session.send_message(prompt)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                st.rerun()
-                
-            except Exception as e:
-                error_msg = f"⚠️ 서버 연결 오류가 발생했습니다. (자동 검색된 모델이 키와 호환되지 않음)\n\n상세 에러: {e}"
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
-                st.rerun()
+    st.write("분석 결과 해석이 필요할 때 아래 버튼을 눌러 평소 사용하시던 Gemini 창을 띄워보세요.")
+    st.link_button("💬 Gemini 새 창으로 열기", "https://gemini.google.com/app", use_container_width=True)
 
 # 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
