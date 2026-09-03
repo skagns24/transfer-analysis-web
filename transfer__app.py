@@ -76,6 +76,9 @@ with st.sidebar:
         if not o_y_auto:
             o_y_min = st.number_input("Y축(Id) 최소값 (mA/mm)", value=0.0, step=5.0, key="o_ymin")
             o_y_max = st.number_input("Y축(Id) 최대값 (mA/mm)", value=200.0, step=10.0, key="o_ymax")
+            
+        st.subheader("📌 온저항(Ron) 분석 설정")
+        target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg", help="해당 Vg와 가장 가까운 곡선을 찾아 0~0.5V 구간에서 선형 피팅을 수행합니다.")
 
     # 3. TLM 설정
     elif analysis_mode == "3. TLM 특성 분석":
@@ -289,7 +292,7 @@ if analysis_mode == "1. Transfer 특성 분석":
 # [모드 2] Output 특성 분석
 # =====================================================================
 elif analysis_mode == "2. Output 특성 분석":
-    st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선을 시각화하고 단위 변환 엑셀을 제공합니다.")
+    st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선과 타겟 $V_g$의 온저항($R_{on}$)을 자동 추출합니다.")
     
     uploaded_output = st.file_uploader(
         "Output 데이터 CSV 파일들을 올려주세요.", 
@@ -319,6 +322,7 @@ elif analysis_mode == "2. Output 특성 분석":
         cmap = plt.colormaps['tab10'] 
         
         processed_dfs_output = {}
+        output_summaries = [] # [추가됨] Ron 저장을 위한 리스트
 
         for idx, file in enumerate(files_to_process_out):
             file_name = file.name.replace('.csv', '')
@@ -333,6 +337,14 @@ elif analysis_mode == "2. Output 특성 분석":
                 
                 df['Id_norm'] = df[col_id_raw] * (1000 / 0.22)
                 
+                # [추가됨] 입력한 Target Vg와 가장 가까운 실제 Vg 찾기
+                unique_vgs = df[col_vg].unique()
+                closest_vg = unique_vgs[np.argmin(np.abs(unique_vgs - target_vg))]
+                
+                file_ron = np.nan
+                file_slope = np.nan
+                file_intercept = np.nan
+                
                 for vg_val, group in df.groupby(col_vg):
                     group = group.sort_values(col_vd)
                     vd_vals = group[col_vd].values
@@ -340,18 +352,48 @@ elif analysis_mode == "2. Output 특성 분석":
                     
                     ax.plot(vd_vals, id_vals, color=c, linewidth=2, label=f"{file_name} ($V_g$={vg_val:g}V)")
 
+                    # [추가됨] 해당 Vg 곡선에서 0~0.5V 대역을 찾아 Linear Fitting (Ron 계산)
+                    if vg_val == closest_vg:
+                        mask = (vd_vals >= 0.0) & (vd_vals <= 0.5)
+                        if np.sum(mask) >= 2:
+                            slope, intercept = np.polyfit(vd_vals[mask], id_vals[mask], 1)
+                            if slope > 0:
+                                file_slope = slope
+                                file_intercept = intercept
+                                # R = 1 / slope. mA/mm -> A/mm 단위 환산으로 1000을 곱함 (결과: Ohm*mm)
+                                file_ron = (1 / slope) * 1000 
+                                
+                # [추가됨] 피팅 완료 후 빨간 점선(Linear fit line) 그리기
+                if not np.isnan(file_slope):
+                    max_i_global = df['Id_norm'].max()
+                    # 점선이 그래프 위로 뚫고 나가지 않게 길이 조절
+                    v_max_line = (max_i_global * 1.1 - file_intercept) / file_slope if file_slope > 0 else max(df[col_vd])
+                    v_line = np.linspace(0, min(v_max_line, max(df[col_vd])), 10)
+                    i_line = file_slope * v_line + file_intercept
+                    
+                    # 파일이 여러 개일 때는 헷갈리지 않게 파일 고유 색상(c) 사용, 1개일 때는 예시처럼 빨간색
+                    line_color = 'red' if len(files_to_process_out) == 1 else c
+                    ax.plot(v_line, i_line, color=line_color, linestyle='--', linewidth=1.5, label=f"Linear fit ($R_{{on}}$: {file_ron:.1f} $\Omega\cdot mm$)")
+
                 pivot_df = df.pivot(index=col_vd, columns=col_vg, values='Id_norm')
                 new_columns = [f'Vg {vg:g}V Drain Current (mA/mm)' for vg in pivot_df.columns]
                 pivot_df.columns = new_columns
                 pivot_df = pivot_df.reset_index()
                 
                 processed_dfs_output[file_name] = pivot_df
+                
+                # 요약 표에 데이터 저장
+                output_summaries.append({
+                    'Sample Name': file_name,
+                    'Analyzed Vg (V)': closest_vg,
+                    'On-Resistance, Ron (Ohm.mm)': file_ron
+                })
 
             except Exception as e:
                 st.error(f"오류 발생: [{file.name}] 처리 실패 ({e})")
 
         ax.set_xlabel('Drain Voltage (V)', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Drain Current (mA/mm)', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Drain Current Density (mA/mm)', fontsize=12, fontweight='bold')
         ax.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
         
         if not o_x_auto:
@@ -368,6 +410,25 @@ elif analysis_mode == "2. Output 특성 분석":
         buf_img = BytesIO()
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
         st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
+
+        # [추가됨] On-Resistance 요약 표 출력
+        if output_summaries:
+            st.markdown("---")
+            st.subheader("📋 소자별 On-Resistance ($R_{on}$) 요약 비교")
+            out_sum_df = pd.DataFrame(output_summaries)
+            
+            def highlight_min_ron(s):
+                is_min = s == s.min(skipna=True)
+                return ['color: red; font-weight: bold' if v else '' for v in is_min]
+                
+            # 가장 온저항이 낮은(좋은) 값에 빨간색 하이라이트
+            styled_out_sum = out_sum_df.style.apply(highlight_min_ron, subset=['On-Resistance, Ron (Ohm.mm)'])
+            st.dataframe(styled_out_sum, use_container_width=True)
+            
+            buf_out_sum = BytesIO()
+            with pd.ExcelWriter(buf_out_sum, engine='openpyxl') as writer:
+                out_sum_df.to_excel(writer, index=False)
+            st.download_button("📥 Output (Ron) 요약 엑셀 다운로드", data=buf_out_sum.getvalue(), file_name="Output_Ron_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         if processed_dfs_output:
             st.markdown("---")
@@ -567,12 +628,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.subheader("📋 전체 샘플 TLM 분석 결과 요약 비교")
                 sum_df = pd.DataFrame(all_tlm_summaries)
                 
-                # 수정됨: s.max()가 아닌 s.min()을 사용하여 최소값에 하이라이트 적용
                 def highlight_min_tlm(s):
                     is_min = s == s.min(skipna=True) 
                     return ['color: red; font-weight: bold' if v else '' for v in is_min]
                     
-                # 수정됨: Rs, Rc, rho_c 3개 열 모두 선택하여 하이라이트 적용
                 styled_sum = sum_df.style.apply(
                     highlight_min_tlm, 
                     subset=[
