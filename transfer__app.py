@@ -741,21 +741,24 @@ elif analysis_mode == "4. AFM 표면 분석":
                 # 1D 배열을 2D 매트릭스로 변환 (Z축 높이 행렬)
                 Z_matrix = df_afm['Z'].values.reshape((y_unique, x_unique))
                 
-                # 3. 거칠기(Roughness) 수치 계산 (수학 공식 적용)
-                z_mean = np.mean(Z_matrix)
-                z_centered = Z_matrix - z_mean # 기준면 평탄화(Leveling)
+        # 3. 데이터 평탄화 (Flattening / Plane Fit)
+                # 기울어진 샘플 표면을 보정하기 위해 1차 평면(1st Order Plane)을 피팅합니다.
+                Y_idx, X_idx = np.indices(Z_matrix.shape)
                 
-                Ra = np.mean(np.abs(z_centered)) # Average Roughness
-                Rq = np.sqrt(np.mean(z_centered**2)) # RMS Roughness
-                Rpv = np.max(z_centered) - np.min(z_centered) # Peak-to-Valley
+                # 평면 방정식 (Z = aX + bY + c)의 최소제곱법(Least Squares) 계산
+                A = np.c_[X_idx.flatten(), Y_idx.flatten(), np.ones(Z_matrix.size)]
+                C, _, _, _ = np.linalg.lstsq(A, Z_matrix.flatten(), rcond=None)
                 
-                afm_summaries.append({
-                    'Sample Name': file_name,
-                    'Ra (nm)': Ra,
-                    'Rq (RMS, nm)': Rq,
-                    'Rpv (Peak-to-Valley, nm)': Rpv
-                })
+                # 피팅된 기울기 평면 생성
+                Z_plane = (C[0] * X_idx + C[1] * Y_idx + C[2])
                 
+                # 원본 Z에서 기울기 평면을 빼서 완벽히 수평으로 평탄화(Flatten)
+                z_flattened = Z_matrix - Z_plane
+                
+                # 4. 거칠기(Roughness) 수치 계산 (평탄화된 데이터 기준)
+                Ra = np.mean(np.abs(z_flattened)) # Average Roughness
+                Rq = np.sqrt(np.mean(z_flattened**2)) # RMS Roughness
+                Rpv = np.max(z_flattened) - np.min(z_flattened) # Peak-to-Valley
                 # 4. 화면 분할 시각화 (좌: 거칠기 결과 / 우: 3D 모델)
                 col_res, col_plot = st.columns([1, 2])
                 
@@ -768,7 +771,7 @@ elif analysis_mode == "4. AFM 표면 분석":
                 with col_plot:
                     # Plotly를 이용한 고해상도 인터랙티브 3D 렌더링
                     fig = go.Figure(data=[go.Surface(
-                        z=z_centered,
+                        z=z_flattened,
                         x=df_afm['X'].unique(),
                         y=df_afm['Y'].unique(),
                         colorscale=color_theme,
