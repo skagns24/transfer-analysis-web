@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import re
 from io import BytesIO
 from scipy.signal import savgol_filter
+import plotly.graph_objects as go # [추가됨] 3D 지형도 렌더링용
 
 # 웹페이지 기본 설정 (최상단 배치)
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
@@ -18,6 +19,8 @@ if 'output_files_data' not in st.session_state:
     st.session_state['output_files_data'] = []
 if 'tlm_files_data' not in st.session_state:
     st.session_state['tlm_files_data'] = []
+if 'afm_files_data' not in st.session_state:
+    st.session_state['afm_files_data'] = []
     
 if 't_uploader_key' not in st.session_state:
     st.session_state['t_uploader_key'] = 0
@@ -25,6 +28,8 @@ if 'o_uploader_key' not in st.session_state:
     st.session_state['o_uploader_key'] = 0
 if 'tlm_uploader_key' not in st.session_state:
     st.session_state['tlm_uploader_key'] = 0
+if 'afm_uploader_key' not in st.session_state:
+    st.session_state['afm_uploader_key'] = 0
 
 # ---------------------------------------------------------
 # 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
@@ -35,7 +40,7 @@ with st.sidebar:
     
     analysis_mode = st.radio(
         "분석할 데이터 종류를 선택하세요.",
-        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 특성 분석"),
+        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 특성 분석", "4. AFM 표면 분석"),
         key="selected_mode"
     )
     st.markdown("---")
@@ -98,6 +103,12 @@ with st.sidebar:
         if not tlm_y_auto:
             tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
+
+    # 4. AFM 설정
+    elif analysis_mode == "4. AFM 표면 분석":
+        st.header("⚙️ AFM 3D 렌더링 설정")
+        color_theme = st.selectbox("컬러 맵 선택", ["copper", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
+        st.info("💡 텍스트(TXT) 파일에 포함된 X, Y, Z (nm) 데이터를 기반으로 3D 지형도와 거칠기를 계산합니다.")
 
     # ==========================================
     # 🤖 사이드바 하단: 외부 Gemini 창 열기 버튼
@@ -670,3 +681,124 @@ elif analysis_mode == "3. TLM 특성 분석":
                 with pd.ExcelWriter(buf_sum, engine='openpyxl') as writer:
                     sum_df.to_excel(writer, index=False)
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# =====================================================================
+# [모드 4] AFM 표면 분석 (새로 추가됨!)
+# =====================================================================
+elif analysis_mode == "4. AFM 표면 분석":
+    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 거칠기 정량화 및 3D 지형도를 제공합니다.")
+    
+    uploaded_afm = st.file_uploader(
+        "AFM Raw Data 텍스트 파일을 올려주세요 (.txt)", 
+        type=['txt', 'csv', 'dat'], 
+        accept_multiple_files=True, 
+        key=f"afm_uploader_{st.session_state['afm_uploader_key']}"
+    )
+
+    if uploaded_afm:
+        st.session_state['afm_files_data'] = uploaded_afm
+
+    files_to_process_afm = st.session_state['afm_files_data']
+
+    if files_to_process_afm:
+        col1, col2 = st.columns([8, 2])
+        with col1:
+            st.success(f"현재 {len(files_to_process_afm)}개의 AFM 파일이 분석 중입니다.")
+        with col2:
+            if st.button("🗑️ 전체 파일 삭제", use_container_width=True):
+                st.session_state['afm_files_data'] = []
+                st.session_state['afm_uploader_key'] += 1
+                st.rerun()
+
+        afm_summaries = []
+
+        for file in files_to_process_afm:
+            file_name = file.name
+            st.markdown("---")
+            st.subheader(f"🔬 샘플 분석: {file_name}")
+            
+            try:
+                # 1. 텍스트 파일 파싱 (헤더 영역 건너뛰고 순수 데이터만 추출)
+                file.seek(0)
+                lines = file.readlines()
+                
+                # 데이터가 시작되는 "X \t Y \t Z" 라인을 찾음
+                start_idx = 0
+                for i, line in enumerate(lines):
+                    if b'X' in line and b'Y' in line and b'Z' in line:
+                        start_idx = i + 1
+                        break
+                
+                # 순수 데이터만 Pandas로 불러오기
+                file.seek(0)
+                df_afm = pd.read_csv(file, skiprows=start_idx, sep=r'\s+', names=['X', 'Y', 'Z'])
+                df_afm = df_afm.dropna()
+                
+                # 2. X, Y 픽셀 사이즈(해상도) 자동 계산 (예: 256x256)
+                x_unique = len(df_afm['X'].unique())
+                y_unique = len(df_afm['Y'].unique())
+                
+                # 1D 배열을 2D 매트릭스로 변환 (Z축 높이 행렬)
+                Z_matrix = df_afm['Z'].values.reshape((y_unique, x_unique))
+                
+                # 3. 거칠기(Roughness) 수치 계산 (수학 공식 적용)
+                z_mean = np.mean(Z_matrix)
+                z_centered = Z_matrix - z_mean # 기준면 평탄화(Leveling)
+                
+                Ra = np.mean(np.abs(z_centered)) # Average Roughness
+                Rq = np.sqrt(np.mean(z_centered**2)) # RMS Roughness
+                Rpv = np.max(z_centered) - np.min(z_centered) # Peak-to-Valley
+                
+                afm_summaries.append({
+                    'Sample Name': file_name,
+                    'Ra (nm)': Ra,
+                    'Rq (RMS, nm)': Rq,
+                    'Rpv (Peak-to-Valley, nm)': Rpv
+                })
+                
+                # 4. 화면 분할 시각화 (좌: 거칠기 결과 / 우: 3D 모델)
+                col_res, col_plot = st.columns([1, 2])
+                
+                with col_res:
+                    st.markdown("### 📊 표면 거칠기(Roughness)")
+                    st.info(f"**$R_q$ (RMS)** : {Rq:.3f} nm\n\n**$R_a$ (Average)** : {Ra:.3f} nm\n\n**$R_{{pv}}$ (Max-Min)** : {Rpv:.3f} nm")
+                    st.write(f"- 스캔 해상도: {x_unique} x {y_unique} 픽셀")
+                    st.write(f"- 스캔 크기: {df_afm['X'].max():.1f} $\mu m$ x {df_afm['Y'].max():.1f} $\mu m$")
+                    
+                with col_plot:
+                    # Plotly를 이용한 고해상도 인터랙티브 3D 렌더링
+                    fig = go.Figure(data=[go.Surface(
+                        z=z_centered,
+                        x=df_afm['X'].unique(),
+                        y=df_afm['Y'].unique(),
+                        colorscale=color_theme,
+                        colorbar=dict(title='Height (nm)')
+                    )])
+                    
+                    fig.update_layout(
+                        title='3D Topography Surface Map',
+                        scene=dict(
+                            xaxis_title='X (um)',
+                            yaxis_title='Y (um)',
+                            zaxis_title='Z Height (nm)',
+                            aspectratio=dict(x=1, y=1, z=0.4) # Z축을 살짝 압축하여 시각적 안정감 부여
+                        ),
+                        margin=dict(l=0, r=0, b=0, t=40)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"데이터 파싱 오류: {file_name} 파일의 양식이 올바르지 않습니다. ({e})")
+
+        # 분석 요약표 엑셀 추출
+        if afm_summaries:
+            st.markdown("---")
+            st.subheader("📋 전체 샘플 AFM 거칠기 요약 비교")
+            afm_sum_df = pd.DataFrame(afm_summaries)
+            
+            st.dataframe(afm_sum_df.style.format({'Ra (nm)': '{:.3f}', 'Rq (RMS, nm)': '{:.3f}', 'Rpv (Peak-to-Valley, nm)': '{:.3f}'}), use_container_width=True)
+            
+            buf_afm = BytesIO()
+            with pd.ExcelWriter(buf_afm, engine='openpyxl') as writer:
+                afm_sum_df.to_excel(writer, index=False)
+            st.download_button("📥 통합 거칠기 요약 엑셀 다운로드", data=buf_afm.getvalue(), file_name="AFM_Roughness_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
