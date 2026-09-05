@@ -96,7 +96,7 @@ with st.sidebar:
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
-        st.info("💡 AFM에서 Export한 텍스트 데이터(X, Y, Z)를 기반으로 라인별 평탄화(Flattening)를 진행한 후 3D 지형도와 거칠기를 계산합니다.")
+        st.info("💡 텍스트(TXT) 파일을 업로드한 후, 메인 화면의 슬라이더를 조절하여 단차를 잴 라인 프로파일 위치와 표면 거칠기 ROI 영역을 설정하세요.")
 
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
@@ -458,7 +458,6 @@ elif analysis_mode == "2. Output 특성 분석":
 # =====================================================================
 elif analysis_mode == "3. TLM 특성 분석":
     st.markdown("TLM 측정을 위해 얻은 CSV 파일들을 업로드하세요. **파일 이름에 전극 간격(10, 20, 30, 40, 80) 숫자가 반드시 포함되어야 자동으로 인식됩니다.**")
-    st.info("💡 **샘플 단위 분리 그래프 안내:**\n\n여러 샘플이 섞이는 것을 방지하려면 파일 이름 앞에 **샘플명**을 적어주세요. (예: `SampleA_10.csv`, `SampleA_20.csv` / `SampleB_10.csv`). 프로그램이 이름 앞부분이 같은 파일끼리 묶어서 **각 샘플마다 독립적인 그래프와 결과 표를 별도로 생성**해 줍니다!")
     
     uploaded_tlm = st.file_uploader(
         "TLM 데이터 CSV 파일들을 올려주세요.", 
@@ -511,7 +510,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 gaps_found = sorted(gap_dict.keys())
                 
                 if not all(g in gaps_found for g in [10, 20, 30, 40]):
-                    st.warning(f"[{group_name}] 샘플은 TLM 분석을 위해 최소 10, 20, 30, 40 파일이 모두 필요합니다. (현재 업로드된 간격: {gaps_found}um)")
+                    st.warning(f"[{group_name}] 샘플은 TLM 분석을 위해 최소 10, 20, 30, 40 파일이 모두 필요합니다.")
                     continue
                     
                 st.markdown("---")
@@ -660,10 +659,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =====================================================================
-# [모드 4] AFM 표면 분석 (라인별 평탄화 Line-by-Line Flattening 적용)
+# [모드 4] AFM 표면 분석 (라인별 평탄화 + ROI 크롭 + 프로파일 기능 추가)
 # =====================================================================
 elif analysis_mode == "4. AFM 표면 분석":
-    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 라인별 평탄화(Flattening) 적용 후 거칠기 정량화 및 3D 지형도를 제공합니다.")
+    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 부분 영역(ROI) 평탄화 기반 거칠기 정량화 및 단면 프로파일(Line Profile)을 제공합니다.")
     
     uploaded_afm = st.file_uploader(
         "AFM Raw Data 텍스트 파일을 올려주세요 (.txt)", 
@@ -709,23 +708,43 @@ elif analysis_mode == "4. AFM 표면 분석":
                 df_afm = pd.read_csv(file, skiprows=start_idx, sep=r'\s+', names=['X', 'Y', 'Z'])
                 df_afm = df_afm.dropna()
                 
-                # 2. X, Y 픽셀 크기 추출 및 2D Z-matrix 생성
-                x_unique = len(df_afm['X'].unique())
-                y_unique = len(df_afm['Y'].unique())
+                # 2. 고유 X, Y 및 원본 Z_matrix 생성
+                x_coords = np.sort(df_afm['X'].unique())
+                y_coords = np.sort(df_afm['Y'].unique())
+                Z_matrix = df_afm['Z'].values.reshape((len(y_coords), len(x_coords)))
                 
-                Z_matrix = df_afm['Z'].values.reshape((y_unique, x_unique))
+                # --- 새로운 기능: ROI 자르기 및 라인 프로파일 위치 설정 ---
+                st.markdown("#### ✂️ 분석 영역(ROI) 및 단면 프로파일 위치 설정")
+                c1, c2, c3 = st.columns(3)
                 
-                # 3. 데이터 평탄화 (Line-by-Line Flattening - AFM 표준 알고리즘)
-                z_flattened = np.zeros_like(Z_matrix)
-                x_array = np.arange(x_unique)
+                x_min_real, x_max_real = float(x_coords[0]), float(x_coords[-1])
+                y_min_real, y_max_real = float(y_coords[0]), float(y_coords[-1])
                 
-                for i in range(y_unique):
-                    z_line = Z_matrix[i, :]
+                with c1:
+                    sel_x = st.slider(f"거칠기 X축 영역 자르기 (µm) - {file_name}", x_min_real, x_max_real, (x_min_real, x_max_real), step=0.1, key=f"x_slide_{file_name}")
+                with c2:
+                    sel_y = st.slider(f"거칠기 Y축 영역 자르기 (µm) - {file_name}", y_min_real, y_max_real, (y_min_real, y_max_real), step=0.1, key=f"y_slide_{file_name}")
+                with c3:
+                    profile_y = st.slider(f"단면을 자를 기준 Y축 위치 (µm) - {file_name}", sel_y[0], sel_y[1], sel_y[0] + (sel_y[1]-sel_y[0])/2, step=0.1, key=f"p_slide_{file_name}")
+
+                # 슬라이더 설정에 따른 데이터 마스킹(Cropping)
+                x_mask = (x_coords >= sel_x[0]) & (x_coords <= sel_x[1])
+                y_mask = (y_coords >= sel_y[0]) & (y_coords <= sel_y[1])
+                
+                crop_X = x_coords[x_mask]
+                crop_Y = y_coords[y_mask]
+                crop_Z = Z_matrix[y_mask, :][:, x_mask]
+
+                # 3. 라인별 평탄화 (잘라낸 영역에 대해서만 개별 Line-by-Line Flattening 적용)
+                z_flattened = np.zeros_like(crop_Z)
+                x_array = np.arange(crop_Z.shape[1])
+                for i in range(crop_Z.shape[0]):
+                    z_line = crop_Z[i, :]
                     slope, intercept = np.polyfit(x_array, z_line, 1)
                     fit_line = slope * x_array + intercept
                     z_flattened[i, :] = z_line - fit_line
                 
-                # 4. 거칠기 계산 (평탄화된 데이터 기준)
+                # 4. 거칠기 계산 (평탄화된 크롭 데이터 기준)
                 Ra = np.mean(np.abs(z_flattened))
                 Rq = np.sqrt(np.mean(z_flattened**2))
                 Rpv = np.max(z_flattened) - np.min(z_flattened)
@@ -737,36 +756,63 @@ elif analysis_mode == "4. AFM 표면 분석":
                     'Rpv (Peak-to-Valley, nm)': Rpv
                 })
                 
+                # 5. 시각화 (좌: 수치 및 단면 프로파일, 우: 3D 플롯)
                 col_res, col_plot = st.columns([1, 2])
                 
                 with col_res:
-                    st.markdown("### 📊 표면 거칠기(Roughness)")
+                    st.markdown("### 📊 부분 영역(ROI) 거칠기 결과")
                     st.info(f"**$R_q$ (RMS)** : {Rq:.3f} nm\n\n**$R_a$ (Average)** : {Ra:.3f} nm\n\n**$R_{{pv}}$ (Max-Min)** : {Rpv:.3f} nm")
-                    st.write(f"- 스캔 해상도: {x_unique} x {y_unique} 픽셀")
-                    st.write(f"- 스캔 크기: {df_afm['X'].max():.1f} $\mu m$ x {df_afm['Y'].max():.1f} $\mu m$")
-                    st.success("✅ AFM 표준 라인별 평탄화(Line-by-Line Flattening)가 적용되었습니다.")
+                    st.write(f"- 크롭된 픽셀: {crop_Z.shape[1]} x {crop_Z.shape[0]} 픽셀")
+                    st.write(f"- 크롭된 크기: {(sel_x[1]-sel_x[0]):.1f} $\mu m$ x {(sel_y[1]-sel_y[0]):.1f} $\mu m$")
+                    st.success("✅ 자르기 영역 내부에 한하여 라인별 평탄화가 적용되었습니다.")
+                    
+                    st.markdown("### 📏 단차 측정 프로파일 (Line Profile)")
+                    # 지정한 Y 좌표에 가장 가까운 인덱스 찾기
+                    y_idx = np.argmin(np.abs(crop_Y - profile_y))
+                    
+                    # 2D 라인 플롯 생성 (Matplotlib)
+                    plt.rcParams['font.family'] = 'Arial'
+                    fig_prof, ax_prof = plt.subplots(figsize=(6, 4))
+                    ax_prof.plot(crop_X, z_flattened[y_idx, :], color='blue', linewidth=1.5)
+                    ax_prof.set_title(f"Line Profile (Cut at Y = {crop_Y[y_idx]:.2f} $\mu m$)", fontsize=11, fontweight='bold')
+                    ax_prof.set_xlabel("X Distance ($\mu m$)", fontsize=10)
+                    ax_prof.set_ylabel("Height (nm)", fontsize=10)
+                    ax_prof.grid(True, linestyle='--', alpha=0.6)
+                    plt.tight_layout()
+                    st.pyplot(fig_prof)
                     
                 with col_plot:
-                    # 5. 평탄화된 데이터(z_flattened)로 3D 플롯 생성
-                    fig = go.Figure(data=[go.Surface(
+                    # Plotly를 이용한 3D 지형도
+                    fig_3d = go.Figure(data=[go.Surface(
                         z=z_flattened,
-                        x=df_afm['X'].unique(),
-                        y=df_afm['Y'].unique(),
+                        x=crop_X,
+                        y=crop_Y,
                         colorscale=color_theme,
                         colorbar=dict(title='Height (nm)')
                     )])
                     
-                    fig.update_layout(
-                        title='3D Topography Surface Map (Flattened)',
+                    # 3D 맵 위에 사용자가 선택한 라인 프로파일 위치를 붉은 선으로 표시
+                    fig_3d.add_trace(go.Scatter3d(
+                        x=crop_X,
+                        y=np.full_like(crop_X, crop_Y[y_idx]),
+                        z=z_flattened[y_idx, :] + (Rpv * 0.05), # 지형도 위로 살짝 띄워서 선명하게 보이게 설정
+                        mode='lines',
+                        line=dict(color='red', width=5),
+                        name='Profile Line'
+                    ))
+                    
+                    fig_3d.update_layout(
+                        title=f'3D Topography (Cropped & Flattened)',
                         scene=dict(
                             xaxis_title='X (um)',
                             yaxis_title='Y (um)',
                             zaxis_title='Z Height (nm)',
                             aspectratio=dict(x=1, y=1, z=0.4) 
                         ),
-                        margin=dict(l=0, r=0, b=0, t=40)
+                        margin=dict(l=0, r=0, b=0, t=40),
+                        showlegend=False
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig_3d, use_container_width=True)
                     
             except Exception as e:
                 st.error(f"데이터 파싱 오류: {file_name} 파일의 양식이 올바르지 않습니다. ({e})")
@@ -774,7 +820,7 @@ elif analysis_mode == "4. AFM 표면 분석":
         # 분석 요약표 엑셀 추출
         if afm_summaries:
             st.markdown("---")
-            st.subheader("📋 전체 샘플 AFM 거칠기 요약 비교")
+            st.subheader("📋 전체 샘플 부분 영역(ROI) 거칠기 요약 비교")
             afm_sum_df = pd.DataFrame(afm_summaries)
             
             st.dataframe(afm_sum_df.style.format({'Ra (nm)': '{:.3f}', 'Rq (RMS, nm)': '{:.3f}', 'Rpv (Peak-to-Valley, nm)': '{:.3f}'}), use_container_width=True)
