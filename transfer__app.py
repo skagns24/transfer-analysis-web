@@ -107,7 +107,7 @@ with st.sidebar:
     # 4. AFM 설정
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
-        color_theme = st.selectbox("컬러 맵 선택", ["copper", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
+        color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
         st.info("💡 텍스트(TXT) 파일에 포함된 X, Y, Z (nm) 데이터를 기반으로 3D 지형도와 거칠기를 계산합니다.")
 
     # ==========================================
