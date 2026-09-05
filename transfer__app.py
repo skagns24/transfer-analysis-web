@@ -95,9 +95,8 @@ with st.sidebar:
 
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
-        # 'copper' 대신 'earth'를 기본값으로 사용하여 Plotly 컬러맵 에러 해결
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
-        st.info("💡 AFM에서 Export한 텍스트 데이터(X, Y, Z)를 기반으로 평탄화(Flattening)를 진행한 후 3D 지형도와 거칠기를 계산합니다.")
+        st.info("💡 AFM에서 Export한 텍스트 데이터(X, Y, Z)를 기반으로 라인별 평탄화(Flattening)를 진행한 후 3D 지형도와 거칠기를 계산합니다.")
 
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
@@ -661,10 +660,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =====================================================================
-# [모드 4] AFM 표면 분석 (1차 피팅 평탄화 로직 적용 완료)
+# [모드 4] AFM 표면 분석 (라인별 평탄화 Line-by-Line Flattening 적용)
 # =====================================================================
 elif analysis_mode == "4. AFM 표면 분석":
-    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 평탄화(Flattening) 적용 후 거칠기 정량화 및 3D 지형도를 제공합니다.")
+    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 라인별 평탄화(Flattening) 적용 후 거칠기 정량화 및 3D 지형도를 제공합니다.")
     
     uploaded_afm = st.file_uploader(
         "AFM Raw Data 텍스트 파일을 올려주세요 (.txt)", 
@@ -716,16 +715,15 @@ elif analysis_mode == "4. AFM 표면 분석":
                 
                 Z_matrix = df_afm['Z'].values.reshape((y_unique, x_unique))
                 
-                # 3. 데이터 평탄화 (Flattening / 1st Order Plane Fit)
-                Y_idx, X_idx = np.indices(Z_matrix.shape)
-                A = np.c_[X_idx.flatten(), Y_idx.flatten(), np.ones(Z_matrix.size)]
+                # 3. 데이터 평탄화 (Line-by-Line Flattening - AFM 표준 알고리즘)
+                z_flattened = np.zeros_like(Z_matrix)
+                x_array = np.arange(x_unique)
                 
-                # 최소제곱법으로 평면 계수(C) 계산
-                C, _, _, _ = np.linalg.lstsq(A, Z_matrix.flatten(), rcond=None)
-                
-                # 피팅된 평면(Plane)을 만들고 원본 높이에서 빼주기 (평탄화 완료)
-                Z_plane = (C[0] * X_idx + C[1] * Y_idx + C[2])
-                z_flattened = Z_matrix - Z_plane
+                for i in range(y_unique):
+                    z_line = Z_matrix[i, :]
+                    slope, intercept = np.polyfit(x_array, z_line, 1)
+                    fit_line = slope * x_array + intercept
+                    z_flattened[i, :] = z_line - fit_line
                 
                 # 4. 거칠기 계산 (평탄화된 데이터 기준)
                 Ra = np.mean(np.abs(z_flattened))
@@ -746,7 +744,7 @@ elif analysis_mode == "4. AFM 표면 분석":
                     st.info(f"**$R_q$ (RMS)** : {Rq:.3f} nm\n\n**$R_a$ (Average)** : {Ra:.3f} nm\n\n**$R_{{pv}}$ (Max-Min)** : {Rpv:.3f} nm")
                     st.write(f"- 스캔 해상도: {x_unique} x {y_unique} 픽셀")
                     st.write(f"- 스캔 크기: {df_afm['X'].max():.1f} $\mu m$ x {df_afm['Y'].max():.1f} $\mu m$")
-                    st.success("✅ 1차 평탄화(Plane Fit Flattening)가 적용되었습니다.")
+                    st.success("✅ AFM 표준 라인별 평탄화(Line-by-Line Flattening)가 적용되었습니다.")
                     
                 with col_plot:
                     # 5. 평탄화된 데이터(z_flattened)로 3D 플롯 생성
