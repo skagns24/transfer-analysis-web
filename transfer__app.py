@@ -5,31 +5,23 @@ import matplotlib.pyplot as plt
 import re
 from io import BytesIO
 from scipy.signal import savgol_filter
-import plotly.graph_objects as go # [추가됨] 3D 지형도 렌더링용
+import plotly.graph_objects as go
 
-# 웹페이지 기본 설정 (최상단 배치)
+# 웹페이지 기본 설정
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
 
 # ---------------------------------------------------------
 # Session State 초기화
 # ---------------------------------------------------------
-if 'transfer_files_data' not in st.session_state:
-    st.session_state['transfer_files_data'] = []
-if 'output_files_data' not in st.session_state:
-    st.session_state['output_files_data'] = []
-if 'tlm_files_data' not in st.session_state:
-    st.session_state['tlm_files_data'] = []
-if 'afm_files_data' not in st.session_state:
-    st.session_state['afm_files_data'] = []
+if 'transfer_files_data' not in st.session_state: st.session_state['transfer_files_data'] = []
+if 'output_files_data' not in st.session_state: st.session_state['output_files_data'] = []
+if 'tlm_files_data' not in st.session_state: st.session_state['tlm_files_data'] = []
+if 'afm_files_data' not in st.session_state: st.session_state['afm_files_data'] = []
     
-if 't_uploader_key' not in st.session_state:
-    st.session_state['t_uploader_key'] = 0
-if 'o_uploader_key' not in st.session_state:
-    st.session_state['o_uploader_key'] = 0
-if 'tlm_uploader_key' not in st.session_state:
-    st.session_state['tlm_uploader_key'] = 0
-if 'afm_uploader_key' not in st.session_state:
-    st.session_state['afm_uploader_key'] = 0
+if 't_uploader_key' not in st.session_state: st.session_state['t_uploader_key'] = 0
+if 'o_uploader_key' not in st.session_state: st.session_state['o_uploader_key'] = 0
+if 'tlm_uploader_key' not in st.session_state: st.session_state['tlm_uploader_key'] = 0
+if 'afm_uploader_key' not in st.session_state: st.session_state['afm_uploader_key'] = 0
 
 # ---------------------------------------------------------
 # 좌측 사이드바: 분석 모드 선택 및 축 범위 컨트롤러
@@ -45,7 +37,6 @@ with st.sidebar:
     )
     st.markdown("---")
     
-    # 1. Transfer 축 범위 설정
     if analysis_mode == "1. Transfer 특성 분석":
         st.header("⚙️ Transfer 축 범위 설정")
         t_x_auto = st.checkbox("X축 자동 조절", value=True, key="t_x_auto")
@@ -65,13 +56,12 @@ with st.sidebar:
 
         st.markdown("---")
         st.subheader("📌 Gm 노이즈 필터링 (Savitzky-Golay)")
-        apply_smoothing = st.checkbox("Gm 노이즈 필터링 적용", value=False, key="apply_smoothing", help="체크하면 엑셀 다운로드 시 'Smoothed Gm' 열이 추가됩니다.")
+        apply_smoothing = st.checkbox("Gm 노이즈 필터링 적용", value=False, key="apply_smoothing")
         
         if apply_smoothing:
             window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window")
             poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly")
 
-    # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
         st.header("⚙️ Output 축 범위 설정")
         o_x_auto = st.checkbox("X축(Vd) 자동 조절", value=True, key="o_x_auto")
@@ -87,7 +77,6 @@ with st.sidebar:
         st.subheader("📌 온저항(Ron) 분석 설정")
         target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg")
 
-    # 3. TLM 설정
     elif analysis_mode == "3. TLM 특성 분석":
         st.header("⚙️ TLM 설정")
         t_w_um = st.number_input("전극 폭 (W, um)", value=220.0, step=10.0, key="tlm_w")
@@ -104,28 +93,23 @@ with st.sidebar:
             tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
-    # 4. AFM 설정
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
+        # 'copper' 대신 'earth'를 기본값으로 사용하여 Plotly 컬러맵 에러 해결
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
-        st.info("💡 텍스트(TXT) 파일에 포함된 X, Y, Z (nm) 데이터를 기반으로 3D 지형도와 거칠기를 계산합니다.")
+        st.info("💡 AFM에서 Export한 텍스트 데이터(X, Y, Z)를 기반으로 평탄화(Flattening)를 진행한 후 3D 지형도와 거칠기를 계산합니다.")
 
-    # ==========================================
-    # 🤖 사이드바 하단: 외부 Gemini 창 열기 버튼
-    # ==========================================
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
-    st.write("분석 결과 해석이 필요할 때 아래 버튼을 눌러 평소 사용하시던 Gemini 창을 띄워보세요.")
     st.link_button("💬 Gemini 새 창으로 열기", "https://gemini.google.com/app", use_container_width=True)
 
-# 메인 타이틀
 st.title("📊 반도체 소자 특성 통합 분석 웹앱")
 
 # =====================================================================
 # [모드 1] Transfer 특성 분석
 # =====================================================================
 if analysis_mode == "1. Transfer 특성 분석":
-    st.markdown("Transfer CSV 파일들을 업로드하세요. 통합 그래프, 파라미터 비교표, **개별 단위 변환 엑셀**을 제공합니다.")
+    st.markdown("Transfer CSV 파일들을 업로드하세요. 통합 그래프, 파라미터 비교표, 개별 단위 변환 엑셀을 제공합니다.")
     
     uploaded_transfer = st.file_uploader(
         "Transfer 데이터 CSV 파일들을 올려주세요.", 
@@ -184,11 +168,9 @@ if analysis_mode == "1. Transfer 특성 분석":
                     id_abs = np.abs(id_norm)
                     ig_abs = group[col_ig_norm_abs].values
                     
-                    # Gm 원본 추출
                     gm_raw = np.gradient(id_norm, vg)
                     df.loc[group.index, 'Raw Gm (mS/mm)'] = gm_raw
                     
-                    # 스무딩(필터링) 적용 여부에 따른 최종 Gm 선택 및 엑셀 데이터 저장
                     if apply_smoothing and len(gm_raw) > window_length:
                         actual_poly = min(poly_order, window_length - 1)
                         gm_final = savgol_filter(gm_raw, window_length, actual_poly)
@@ -196,20 +178,18 @@ if analysis_mode == "1. Transfer 특성 분석":
                     else:
                         gm_final = gm_raw
                     
-                    # 그래프 시각화
                     label_name = f"{file_name}"
                     ax1.plot(vg, id_norm, label=label_name, color=c, linewidth=2)
                     
                     if apply_smoothing and len(gm_raw) > window_length:
-                        ax1_twin.plot(vg, gm_raw, color=c, linestyle=':', linewidth=1.5, alpha=0.3) # 원본(흐리게)
-                        ax1_twin.plot(vg, gm_final, color=c, linestyle='--', linewidth=2.5, alpha=0.8) # 필터링됨(진하게)
+                        ax1_twin.plot(vg, gm_raw, color=c, linestyle=':', linewidth=1.5, alpha=0.3)
+                        ax1_twin.plot(vg, gm_final, color=c, linestyle='--', linewidth=2.5, alpha=0.8)
                     else:
                         ax1_twin.plot(vg, gm_final, color=c, linestyle='--', linewidth=2, alpha=0.6)
                     
                     ax2.plot(vg, id_abs, label=label_name, color=c, linewidth=2)
                     ax2.plot(vg, ig_abs, color=c, linestyle=':', linewidth=2, alpha=0.6)
 
-                    # 파라미터 추출
                     gm_max = np.max(gm_final)
                     id_max = np.max(id_norm)
                     idx_max_gm = np.argmax(gm_final)
@@ -251,7 +231,6 @@ if analysis_mode == "1. Transfer 특성 분석":
                         'On/Off Ratio': on_off_ratio
                     })
                     
-                # 엑셀 다운로드용 데이터프레임 정리 (옵션에 따라 Smoothed Gm 포함)
                 cols_to_export = [col_vg, col_id_norm, col_ig_norm_abs, col_vd, 'Raw Gm (mS/mm)']
                 if apply_smoothing and 'Smoothed Gm (mS/mm)' in df.columns:
                     cols_to_export.append('Smoothed Gm (mS/mm)')
@@ -277,7 +256,6 @@ if analysis_mode == "1. Transfer 특성 분석":
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
-        # 범례 동적 변경
         legend_title = "Solid: $I_d$, Dashed: Smoothed $G_m$, Dotted: Raw $G_m$" if apply_smoothing else "Solid: $I_d$, Dashed: $G_m$"
         ax1.legend(loc='upper left', frameon=True, fontsize=9, title=legend_title)
 
@@ -683,10 +661,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =====================================================================
-# [모드 4] AFM 표면 분석 (새로 추가됨!)
+# [모드 4] AFM 표면 분석 (1차 피팅 평탄화 로직 적용 완료)
 # =====================================================================
 elif analysis_mode == "4. AFM 표면 분석":
-    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 거칠기 정량화 및 3D 지형도를 제공합니다.")
+    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 표면 평탄화(Flattening) 적용 후 거칠기 정량화 및 3D 지형도를 제공합니다.")
     
     uploaded_afm = st.file_uploader(
         "AFM Raw Data 텍스트 파일을 올려주세요 (.txt)", 
@@ -718,48 +696,49 @@ elif analysis_mode == "4. AFM 표면 분석":
             st.subheader(f"🔬 샘플 분석: {file_name}")
             
             try:
-                # 1. 텍스트 파일 파싱 (헤더 영역 건너뛰고 순수 데이터만 추출)
+                # 1. 텍스트 파일 파싱
                 file.seek(0)
                 lines = file.readlines()
                 
-                # 데이터가 시작되는 "X \t Y \t Z" 라인을 찾음
                 start_idx = 0
                 for i, line in enumerate(lines):
                     if b'X' in line and b'Y' in line and b'Z' in line:
                         start_idx = i + 1
                         break
                 
-                # 순수 데이터만 Pandas로 불러오기
                 file.seek(0)
                 df_afm = pd.read_csv(file, skiprows=start_idx, sep=r'\s+', names=['X', 'Y', 'Z'])
                 df_afm = df_afm.dropna()
                 
-                # 2. X, Y 픽셀 사이즈(해상도) 자동 계산 (예: 256x256)
+                # 2. X, Y 픽셀 크기 추출 및 2D Z-matrix 생성
                 x_unique = len(df_afm['X'].unique())
                 y_unique = len(df_afm['Y'].unique())
                 
-                # 1D 배열을 2D 매트릭스로 변환 (Z축 높이 행렬)
                 Z_matrix = df_afm['Z'].values.reshape((y_unique, x_unique))
                 
-        # 3. 데이터 평탄화 (Flattening / Plane Fit)
-                # 기울어진 샘플 표면을 보정하기 위해 1차 평면(1st Order Plane)을 피팅합니다.
+                # 3. 데이터 평탄화 (Flattening / 1st Order Plane Fit)
                 Y_idx, X_idx = np.indices(Z_matrix.shape)
-                
-                # 평면 방정식 (Z = aX + bY + c)의 최소제곱법(Least Squares) 계산
                 A = np.c_[X_idx.flatten(), Y_idx.flatten(), np.ones(Z_matrix.size)]
+                
+                # 최소제곱법으로 평면 계수(C) 계산
                 C, _, _, _ = np.linalg.lstsq(A, Z_matrix.flatten(), rcond=None)
                 
-                # 피팅된 기울기 평면 생성
+                # 피팅된 평면(Plane)을 만들고 원본 높이에서 빼주기 (평탄화 완료)
                 Z_plane = (C[0] * X_idx + C[1] * Y_idx + C[2])
-                
-                # 원본 Z에서 기울기 평면을 빼서 완벽히 수평으로 평탄화(Flatten)
                 z_flattened = Z_matrix - Z_plane
                 
-                # 4. 거칠기(Roughness) 수치 계산 (평탄화된 데이터 기준)
-                Ra = np.mean(np.abs(z_flattened)) # Average Roughness
-                Rq = np.sqrt(np.mean(z_flattened**2)) # RMS Roughness
-                Rpv = np.max(z_flattened) - np.min(z_flattened) # Peak-to-Valley
-                # 4. 화면 분할 시각화 (좌: 거칠기 결과 / 우: 3D 모델)
+                # 4. 거칠기 계산 (평탄화된 데이터 기준)
+                Ra = np.mean(np.abs(z_flattened))
+                Rq = np.sqrt(np.mean(z_flattened**2))
+                Rpv = np.max(z_flattened) - np.min(z_flattened)
+                
+                afm_summaries.append({
+                    'Sample Name': file_name,
+                    'Ra (nm)': Ra,
+                    'Rq (RMS, nm)': Rq,
+                    'Rpv (Peak-to-Valley, nm)': Rpv
+                })
+                
                 col_res, col_plot = st.columns([1, 2])
                 
                 with col_res:
@@ -767,9 +746,10 @@ elif analysis_mode == "4. AFM 표면 분석":
                     st.info(f"**$R_q$ (RMS)** : {Rq:.3f} nm\n\n**$R_a$ (Average)** : {Ra:.3f} nm\n\n**$R_{{pv}}$ (Max-Min)** : {Rpv:.3f} nm")
                     st.write(f"- 스캔 해상도: {x_unique} x {y_unique} 픽셀")
                     st.write(f"- 스캔 크기: {df_afm['X'].max():.1f} $\mu m$ x {df_afm['Y'].max():.1f} $\mu m$")
+                    st.success("✅ 1차 평탄화(Plane Fit Flattening)가 적용되었습니다.")
                     
                 with col_plot:
-                    # Plotly를 이용한 고해상도 인터랙티브 3D 렌더링
+                    # 5. 평탄화된 데이터(z_flattened)로 3D 플롯 생성
                     fig = go.Figure(data=[go.Surface(
                         z=z_flattened,
                         x=df_afm['X'].unique(),
@@ -779,12 +759,12 @@ elif analysis_mode == "4. AFM 표면 분석":
                     )])
                     
                     fig.update_layout(
-                        title='3D Topography Surface Map',
+                        title='3D Topography Surface Map (Flattened)',
                         scene=dict(
                             xaxis_title='X (um)',
                             yaxis_title='Y (um)',
                             zaxis_title='Z Height (nm)',
-                            aspectratio=dict(x=1, y=1, z=0.4) # Z축을 살짝 압축하여 시각적 안정감 부여
+                            aspectratio=dict(x=1, y=1, z=0.4) 
                         ),
                         margin=dict(l=0, r=0, b=0, t=40)
                     )
