@@ -1,4 +1,4 @@
-import streamlit as st
+]import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -96,7 +96,7 @@ with st.sidebar:
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
-        st.info("💡 텍스트(TXT) 파일을 업로드한 후, 메인 화면의 슬라이더를 조절하여 단차를 잴 라인 프로파일 위치와 표면 거칠기 ROI 영역을 설정하세요.")
+        st.info("💡 메인 화면의 슬라이더를 조절하여 '기준면(Baseline)'을 설정하면, 해당 영역을 0으로 맞춘 완벽한 단차(Step Height) 계산이 가능합니다.")
 
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
@@ -255,14 +255,14 @@ if analysis_mode == "1. Transfer 특성 분석":
         if not t_y_log_auto:
             ax2.set_ylim(10**t_y_log_min_exp, 10**t_y_log_max_exp)
 
-        legend_title = "Solid: $I_d$, Dashed: Smoothed $G_m$, Dotted: Raw $G_m$" if apply_smoothing else "Solid: $I_d$, Dashed: $G_m$"
+        legend_title = "Solid: Id, Dashed: Smoothed Gm, Dotted: Raw Gm" if apply_smoothing else "Solid: Id, Dashed: Gm"
         ax1.legend(loc='upper left', frameon=True, fontsize=9, title=legend_title)
 
         ax2.set_yscale('log')
         ax2.set_xlabel('Gate Voltage (V)', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Current (mA/mm)', fontsize=12, fontweight='bold')
         ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
-        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: $|I_d|$, Dotted: $|I_g|$")
+        ax2.legend(loc='lower right', frameon=True, fontsize=9, title="Solid: |Id|, Dotted: |Ig|")
 
         plt.tight_layout()
         st.subheader("📈 통합 Transfer 커브 시각화")
@@ -312,7 +312,7 @@ if analysis_mode == "1. Transfer 특성 분석":
 # [모드 2] Output 특성 분석
 # =====================================================================
 elif analysis_mode == "2. Output 특성 분석":
-    st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압($V_g$)별 드레인 전류 곡선과 타겟 $V_g$의 온저항($R_{on}$)을 자동 추출합니다.")
+    st.markdown("Output CSV 파일들을 업로드하세요. 게이트 전압(Vg)별 드레인 전류 곡선과 타겟 Vg의 온저항(Ron)을 자동 추출합니다.")
     
     uploaded_output = st.file_uploader(
         "Output 데이터 CSV 파일들을 올려주세요.", 
@@ -369,7 +369,7 @@ elif analysis_mode == "2. Output 특성 분석":
                     vd_vals = group[col_vd].values
                     id_vals = group['Id_norm'].values
                     
-                    ax.plot(vd_vals, id_vals, color=c, linewidth=2, label=f"{file_name} ($V_g$={vg_val:g}V)")
+                    ax.plot(vd_vals, id_vals, color=c, linewidth=2, label=f"{file_name} (Vg={vg_val:g}V)")
 
                     if vg_val == closest_vg:
                         mask = (vd_vals >= 0.0) & (vd_vals <= 0.5)
@@ -387,7 +387,7 @@ elif analysis_mode == "2. Output 특성 분석":
                     i_line = file_slope * v_line + file_intercept
                     
                     line_color = 'red' if len(files_to_process_out) == 1 else c
-                    ax.plot(v_line, i_line, color=line_color, linestyle='--', linewidth=1.5, label=f"Linear fit ($R_{{on}}$: {file_ron:.1f} $\Omega\cdot mm$)")
+                    ax.plot(v_line, i_line, color=line_color, linestyle='--', linewidth=1.5, label=f"Linear fit (Ron: {file_ron:.1f} Ohm.mm)")
 
                 pivot_df = df.pivot(index=col_vd, columns=col_vg, values='Id_norm')
                 new_columns = [f'Vg {vg:g}V Drain Current (mA/mm)' for vg in pivot_df.columns]
@@ -426,7 +426,7 @@ elif analysis_mode == "2. Output 특성 분석":
 
         if output_summaries:
             st.markdown("---")
-            st.subheader("📋 소자별 On-Resistance ($R_{on}$) 요약 비교")
+            st.subheader("📋 소자별 On-Resistance (Ron) 요약 비교")
             out_sum_df = pd.DataFrame(output_summaries)
             
             def highlight_min_ron(s):
@@ -499,7 +499,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 tlm_groups[group_name][gap] = file
                 
         if not tlm_groups:
-            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일을 찾을 수 없습니다. 파일명을 확인해 주세요.")
+            st.warning("업로드된 파일 중 이름에 10, 20, 30, 40, 80이 포함된 CSV 파일을 찾을 수 없습니다.")
         else:
             plt.rcParams['font.family'] = 'Arial'
             plt.rcParams['axes.linewidth'] = 1.5
@@ -575,7 +575,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 
                 for idx, gap in enumerate(gaps_found):
                     if f'{gap}um Current (mA)' in iv_data:
-                        ax1.plot(iv_data['Voltage (V)'], iv_data[f'{gap}um Current (mA)'], color=cmap(idx % 10), linewidth=2, label=f'{gap} $\mu m$')
+                        ax1.plot(iv_data['Voltage (V)'], iv_data[f'{gap}um Current (mA)'], color=cmap(idx % 10), linewidth=2, label=f'{gap} um')
                         
                 ax1.set_title("Ohmic Characteristics (I-V)", fontsize=13, fontweight='bold')
                 ax1.set_xlabel("Voltage (V)", fontsize=11, fontweight='bold')
@@ -595,11 +595,11 @@ elif analysis_mode == "3. TLM 특성 분석":
                 ax2.plot(L_line, R_line, 'r--', linewidth=2, label=f'Linear Fit (R² ≒ {np.corrcoef(L, R)[0,1]**2:.4f})')
                 
                 ax2.set_title("TLM Plot (Resistance vs Gap)", fontsize=13, fontweight='bold')
-                ax2.set_xlabel("Gap Distance ($\mu m$)", fontsize=11, fontweight='bold')
-                ax2.set_ylabel("Total Resistance ($\Omega$)", fontsize=11, fontweight='bold')
+                ax2.set_xlabel("Gap Distance (um)", fontsize=11, fontweight='bold')
+                ax2.set_ylabel("Total Resistance (Ohm)", fontsize=11, fontweight='bold')
                 ax2.tick_params(axis='both', direction='in', labelsize=10, width=1.5, top=True, right=True)
                 
-                text_str = f"$R_s$: {Rs:.2f} $\\Omega/sq$\n$R_c$: {Rc:.2f} $\\Omega$\n$\\rho_c$: {rho_c:.2e} $\\Omega\\cdot cm^2$"
+                text_str = f"Rs: {Rs:.2f} Ohm/sq\nRc: {Rc:.2f} Ohm\nrho_c: {rho_c:.2e} Ohm.cm2"
                 props = dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray')
                 ax2.text(0.05, 0.95, text_str, transform=ax2.transAxes, fontsize=11, verticalalignment='top', bbox=props)
                 ax2.legend(loc='lower right')
@@ -613,7 +613,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                 fig.savefig(buf_img_tlm, format="png", dpi=300, bbox_inches='tight')
                 with col_dl1:
                     st.download_button(
-                        label=f"🖼️ [{group_name}] 그래프 이미지 다운로드 (.png)",
+                        label=f"🖼️ [{group_name}] 그래프 다운로드 (.png)",
                         data=buf_img_tlm.getvalue(),
                         file_name=f"TLM_{group_name}_Plot.png",
                         mime="image/png",
@@ -626,7 +626,7 @@ elif analysis_mode == "3. TLM 특성 분석":
                     iv_df.to_excel(writer, index=False, sheet_name='I-V Data')
                 with col_dl2:
                     st.download_button(
-                        label=f"📥 [{group_name}] 전극별 I-V 데이터 다운로드 (.xlsx)",
+                        label=f"📥 [{group_name}] 데이터 다운로드 (.xlsx)",
                         data=buf_tlm.getvalue(),
                         file_name=f"TLM_{group_name}_IV_Data.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -659,10 +659,10 @@ elif analysis_mode == "3. TLM 특성 분석":
                 st.download_button("📥 통합 TLM 요약 비교 엑셀 다운로드", data=buf_sum.getvalue(), file_name="Combined_TLM_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =====================================================================
-# [모드 4] AFM 표면 분석 (라인별 평탄화 + ROI 크롭 + 프로파일 기능 추가)
+# [모드 4] AFM 표면 분석 (기준면 레벨링 + 단차 프로파일 + 영역 크롭)
 # =====================================================================
 elif analysis_mode == "4. AFM 표면 분석":
-    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 부분 영역(ROI) 평탄화 기반 거칠기 정량화 및 단면 프로파일(Line Profile)을 제공합니다.")
+    st.markdown("AFM 장비에서 Export한 **텍스트(.txt) 파일**을 업로드하세요. 부분 영역(ROI) 평탄화 기반 거칠기 정량화 및 정밀 단면 프로파일(Line Profile)을 제공합니다.")
     
     uploaded_afm = st.file_uploader(
         "AFM Raw Data 텍스트 파일을 올려주세요 (.txt)", 
@@ -711,98 +711,130 @@ elif analysis_mode == "4. AFM 표면 분석":
                 # 2. 고유 X, Y 및 원본 Z_matrix 생성
                 x_coords = np.sort(df_afm['X'].unique())
                 y_coords = np.sort(df_afm['Y'].unique())
-                Z_matrix = df_afm['Z'].values.reshape((len(y_coords), len(x_coords)))
-                
-                # --- 새로운 기능: ROI 자르기 및 라인 프로파일 위치 설정 ---
-                st.markdown("#### ✂️ 분석 영역(ROI) 및 단면 프로파일 위치 설정")
-                c1, c2, c3 = st.columns(3)
+                Z_matrix_raw = df_afm['Z'].values.reshape((len(y_coords), len(x_coords)))
                 
                 x_min_real, x_max_real = float(x_coords[0]), float(x_coords[-1])
                 y_min_real, y_max_real = float(y_coords[0]), float(y_coords[-1])
+
+                # --- 3. UI 슬라이더: 기준면(Baseline) 지정 및 단차 계산 ---
+                st.markdown("#### 📏 단면 프로파일 및 단차(Step Height) 측정 설정")
+                st.info("단차를 잴 때 기준이 되는 평평한 바닥면을 '기준면(Baseline)' 슬라이더로 지정하세요. 이 구간을 0으로 완벽하게 수평 피팅합니다.")
                 
+                # Y축 라인 프로파일 위치 선택
+                profile_y = st.slider(f"단면을 자를 기준 Y축 위치 (um)", y_min_real, y_max_real, y_min_real + (y_max_real-y_min_real)/2, step=0.1, key=f"p_slide_{file_name}")
+                y_idx = np.argmin(np.abs(y_coords - profile_y))
+                raw_z_line = Z_matrix_raw[y_idx, :]
+                
+                c_base, c_step = st.columns(2)
+                with c_base:
+                    base_range = st.slider("🟩 기준면(Baseline, Z=0으로 펴질 영역)", x_min_real, x_max_real, (x_min_real, x_min_real + 2.0), step=0.1, key=f"base_slide_{file_name}")
+                with c_step:
+                    step_range = st.slider("🟥 단차 측정(Step Height 계산 영역)", x_min_real, x_max_real, (x_max_real - 2.0, x_max_real), step=0.1, key=f"step_slide_{file_name}")
+
+                # 지정된 기준면을 이용해 해당 Line의 기울기를 계산하고 완벽하게 0으로 폄 (Baseline Leveling)
+                base_mask = (x_coords >= base_range[0]) & (x_coords <= base_range[1])
+                step_mask = (x_coords >= step_range[0]) & (x_coords <= step_range[1])
+                
+                if sum(base_mask) > 1:
+                    slope, intercept = np.polyfit(x_coords[base_mask], raw_z_line[base_mask], 1)
+                    leveled_z_line = raw_z_line - (slope * x_coords + intercept)
+                else:
+                    leveled_z_line = raw_z_line # 마스킹 영역이 너무 좁을 경우 원본 유지
+                    
+                # 단차(Step Height) 계산
+                if sum(step_mask) > 0:
+                    step_height = np.mean(leveled_z_line[step_mask])
+                else:
+                    step_height = 0.0
+
+                # --- 4. 3D 지형도용 전체 평탄화 (선택된 Baseline을 전체 영역에 적용) ---
+                Z_matrix_flattened = np.zeros_like(Z_matrix_raw)
+                for i in range(len(y_coords)):
+                    z_line = Z_matrix_raw[i, :]
+                    if sum(base_mask) > 1:
+                        s, inc = np.polyfit(x_coords[base_mask], z_line[base_mask], 1)
+                        Z_matrix_flattened[i, :] = z_line - (s * x_coords + inc)
+                    else:
+                        Z_matrix_flattened[i, :] = z_line
+
+                # --- 5. 거칠기를 계산할 ROI(관심 영역) 크롭 ---
+                st.markdown("#### ✂️ 표면 거칠기(Roughness) 계산 영역 지정")
+                c1, c2 = st.columns(2)
                 with c1:
-                    sel_x = st.slider(f"거칠기 X축 영역 자르기 (µm) - {file_name}", x_min_real, x_max_real, (x_min_real, x_max_real), step=0.1, key=f"x_slide_{file_name}")
+                    sel_x = st.slider(f"거칠기 계산 X축 범위", x_min_real, x_max_real, (x_min_real, x_max_real), step=0.1, key=f"x_crop_{file_name}")
                 with c2:
-                    sel_y = st.slider(f"거칠기 Y축 영역 자르기 (µm) - {file_name}", y_min_real, y_max_real, (y_min_real, y_max_real), step=0.1, key=f"y_slide_{file_name}")
-                with c3:
-                    profile_y = st.slider(f"단면을 자를 기준 Y축 위치 (µm) - {file_name}", sel_y[0], sel_y[1], sel_y[0] + (sel_y[1]-sel_y[0])/2, step=0.1, key=f"p_slide_{file_name}")
+                    sel_y = st.slider(f"거칠기 계산 Y축 범위", y_min_real, y_max_real, (y_min_real, y_max_real), step=0.1, key=f"y_crop_{file_name}")
 
-                # 슬라이더 설정에 따른 데이터 마스킹(Cropping)
-                x_mask = (x_coords >= sel_x[0]) & (x_coords <= sel_x[1])
-                y_mask = (y_coords >= sel_y[0]) & (y_coords <= sel_y[1])
+                x_crop_mask = (x_coords >= sel_x[0]) & (x_coords <= sel_x[1])
+                y_crop_mask = (y_coords >= sel_y[0]) & (y_coords <= sel_y[1])
+                crop_Z = Z_matrix_flattened[y_crop_mask, :][:, x_crop_mask]
                 
-                crop_X = x_coords[x_mask]
-                crop_Y = y_coords[y_mask]
-                crop_Z = Z_matrix[y_mask, :][:, x_mask]
-
-                # 3. 라인별 평탄화 (잘라낸 영역에 대해서만 개별 Line-by-Line Flattening 적용)
-                z_flattened = np.zeros_like(crop_Z)
-                x_array = np.arange(crop_Z.shape[1])
-                for i in range(crop_Z.shape[0]):
-                    z_line = crop_Z[i, :]
-                    slope, intercept = np.polyfit(x_array, z_line, 1)
-                    fit_line = slope * x_array + intercept
-                    z_flattened[i, :] = z_line - fit_line
-                
-                # 4. 거칠기 계산 (평탄화된 크롭 데이터 기준)
-                Ra = np.mean(np.abs(z_flattened))
-                Rq = np.sqrt(np.mean(z_flattened**2))
-                Rpv = np.max(z_flattened) - np.min(z_flattened)
+                # 거칠기 계산
+                Ra = np.mean(np.abs(crop_Z))
+                Rq = np.sqrt(np.mean(crop_Z**2))
+                Rpv = np.max(crop_Z) - np.min(crop_Z)
                 
                 afm_summaries.append({
                     'Sample Name': file_name,
+                    'Step Height (nm)': step_height,
                     'Ra (nm)': Ra,
                     'Rq (RMS, nm)': Rq,
                     'Rpv (Peak-to-Valley, nm)': Rpv
                 })
                 
-                # 5. 시각화 (좌: 수치 및 단면 프로파일, 우: 3D 플롯)
+                # 6. 시각화 (좌: 수치 및 단면 프로파일, 우: 3D 플롯)
                 col_res, col_plot = st.columns([1, 2])
                 
                 with col_res:
-                    st.markdown("### 📊 부분 영역(ROI) 거칠기 결과")
-                    st.info(f"**$R_q$ (RMS)** : {Rq:.3f} nm\n\n**$R_a$ (Average)** : {Ra:.3f} nm\n\n**$R_{{pv}}$ (Max-Min)** : {Rpv:.3f} nm")
-                    st.write(f"- 크롭된 픽셀: {crop_Z.shape[1]} x {crop_Z.shape[0]} 픽셀")
-                    st.write(f"- 크롭된 크기: {(sel_x[1]-sel_x[0]):.1f} $\mu m$ x {(sel_y[1]-sel_y[0]):.1f} $\mu m$")
-                    st.success("✅ 자르기 영역 내부에 한하여 라인별 평탄화가 적용되었습니다.")
-                    
-                    st.markdown("### 📏 단차 측정 프로파일 (Line Profile)")
-                    # 지정한 Y 좌표에 가장 가까운 인덱스 찾기
-                    y_idx = np.argmin(np.abs(crop_Y - profile_y))
+                    st.markdown("### 📊 분석 결과")
+                    st.success(f"**측정된 단차(Step Height)** : {abs(step_height):.3f} nm")
+                    st.info(f"**Rq (RMS 거칠기)** : {Rq:.3f} nm\n\n**Ra (Average)** : {Ra:.3f} nm\n\n**Rpv (Max-Min)** : {Rpv:.3f} nm")
                     
                     # 2D 라인 플롯 생성 (Matplotlib)
                     plt.rcParams['font.family'] = 'Arial'
                     fig_prof, ax_prof = plt.subplots(figsize=(6, 4))
-                    ax_prof.plot(crop_X, z_flattened[y_idx, :], color='blue', linewidth=1.5)
-                    ax_prof.set_title(f"Line Profile (Cut at Y = {crop_Y[y_idx]:.2f} $\mu m$)", fontsize=11, fontweight='bold')
-                    ax_prof.set_xlabel("X Distance ($\mu m$)", fontsize=10)
+                    
+                    # 라인 프로파일 그리기
+                    ax_prof.plot(x_coords, leveled_z_line, color='blue', linewidth=1.5, label='Leveled Profile')
+                    
+                    # 기준면(초록색)과 측정면(빨간색) 음영 하이라이트
+                    ax_prof.axvspan(base_range[0], base_range[1], color='green', alpha=0.2, label='Baseline (Z=0)')
+                    ax_prof.axvspan(step_range[0], step_range[1], color='red', alpha=0.2, label='Step Target')
+                    
+                    # 단차 텍스트 표시
+                    ax_prof.axhline(0, color='black', linestyle='--', linewidth=1)
+                    ax_prof.axhline(step_height, color='black', linestyle='--', linewidth=1)
+                    
+                    ax_prof.set_title(f"Leveled Line Profile (Cut at Y = {y_coords[y_idx]:.2f} um)", fontsize=11, fontweight='bold')
+                    ax_prof.set_xlabel("X Distance (um)", fontsize=10)
                     ax_prof.set_ylabel("Height (nm)", fontsize=10)
                     ax_prof.grid(True, linestyle='--', alpha=0.6)
+                    ax_prof.legend(loc='best', fontsize=8)
                     plt.tight_layout()
                     st.pyplot(fig_prof)
                     
                 with col_plot:
-                    # Plotly를 이용한 3D 지형도
+                    # Plotly를 이용한 3D 지형도 (전체 영역 렌더링)
                     fig_3d = go.Figure(data=[go.Surface(
-                        z=z_flattened,
-                        x=crop_X,
-                        y=crop_Y,
+                        z=Z_matrix_flattened,
+                        x=x_coords,
+                        y=y_coords,
                         colorscale=color_theme,
                         colorbar=dict(title='Height (nm)')
                     )])
                     
                     # 3D 맵 위에 사용자가 선택한 라인 프로파일 위치를 붉은 선으로 표시
                     fig_3d.add_trace(go.Scatter3d(
-                        x=crop_X,
-                        y=np.full_like(crop_X, crop_Y[y_idx]),
-                        z=z_flattened[y_idx, :] + (Rpv * 0.05), # 지형도 위로 살짝 띄워서 선명하게 보이게 설정
+                        x=x_coords,
+                        y=np.full_like(x_coords, y_coords[y_idx]),
+                        z=leveled_z_line + (np.max(Z_matrix_flattened) * 0.05), # 지형도 위로 살짝 띄워서 선명하게 보임
                         mode='lines',
                         line=dict(color='red', width=5),
                         name='Profile Line'
                     ))
                     
                     fig_3d.update_layout(
-                        title=f'3D Topography (Cropped & Flattened)',
+                        title=f'3D Topography (Baseline Leveled)',
                         scene=dict(
                             xaxis_title='X (um)',
                             yaxis_title='Y (um)',
@@ -817,15 +849,19 @@ elif analysis_mode == "4. AFM 표면 분석":
             except Exception as e:
                 st.error(f"데이터 파싱 오류: {file_name} 파일의 양식이 올바르지 않습니다. ({e})")
 
-        # 분석 요약표 엑셀 추출
         if afm_summaries:
             st.markdown("---")
-            st.subheader("📋 전체 샘플 부분 영역(ROI) 거칠기 요약 비교")
+            st.subheader("📋 전체 샘플 단차 및 거칠기 요약 비교")
             afm_sum_df = pd.DataFrame(afm_summaries)
             
-            st.dataframe(afm_sum_df.style.format({'Ra (nm)': '{:.3f}', 'Rq (RMS, nm)': '{:.3f}', 'Rpv (Peak-to-Valley, nm)': '{:.3f}'}), use_container_width=True)
+            st.dataframe(afm_sum_df.style.format({
+                'Step Height (nm)': '{:.3f}', 
+                'Ra (nm)': '{:.3f}', 
+                'Rq (RMS, nm)': '{:.3f}', 
+                'Rpv (Peak-to-Valley, nm)': '{:.3f}'
+            }), use_container_width=True)
             
             buf_afm = BytesIO()
             with pd.ExcelWriter(buf_afm, engine='openpyxl') as writer:
                 afm_sum_df.to_excel(writer, index=False)
-            st.download_button("📥 통합 거칠기 요약 엑셀 다운로드", data=buf_afm.getvalue(), file_name="AFM_Roughness_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 통합 요약 엑셀 다운로드", data=buf_afm.getvalue(), file_name="AFM_Step_Roughness_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
