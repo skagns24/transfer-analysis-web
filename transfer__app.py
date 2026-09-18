@@ -7,7 +7,44 @@ from io import BytesIO
 from scipy.signal import savgol_filter
 import plotly.graph_objects as go
 
+# =====================================================================
+# 반도체 물성 데이터베이스 (Material Parameter Database) - HEMT용
+# =====================================================================
+q = 1.602e-19         
+eps_0 = 8.854e-12     
+kT = 0.0259           
+
+GaN = {
+    'Eg': 3.42, 'chi': 4.1, 'eps_r': 8.9, 'a': 3.189e-10, 
+    'Psp': -0.029, 'e31': -0.49, 'e33': 0.73, 'C13': 103, 'C33': 405
+}
+
+AlN = {
+    'Eg': 6.2, 'chi': 0.6, 'eps_r': 8.5, 'a': 3.112e-10, 
+    'Psp': -0.081, 'e31': -0.60, 'e33': 1.46, 'C13': 108, 'C33': 373
+}
+
+def get_AlGaN_params(x):
+    Eg = x * AlN['Eg'] + (1 - x) * GaN['Eg'] - 0.7 * x * (1 - x)
+    chi = x * AlN['chi'] + (1 - x) * GaN['chi']
+    eps_r = x * AlN['eps_r'] + (1 - x) * GaN['eps_r']
+    a = x * AlN['a'] + (1 - x) * GaN['a']
+    Psp = x * AlN['Psp'] + (1 - x) * GaN['Psp']
+    
+    strain = (GaN['a'] - a) / a
+    e31 = x * AlN['e31'] + (1 - x) * GaN['e31']
+    e33 = x * AlN['e33'] + (1 - x) * GaN['e33']
+    C13 = x * AlN['C13'] + (1 - x) * GaN['C13']
+    C33 = x * AlN['C33'] + (1 - x) * GaN['C33']
+    
+    Ppz = 2 * (e31 - e33 * (C13 / C33)) * strain
+    P_total = Psp + Ppz
+    
+    return {'Eg': Eg, 'chi': chi, 'eps_r': eps_r, 'P_total': P_total}
+
+# =====================================================================
 # 웹페이지 기본 설정
+# =====================================================================
 st.set_page_config(layout="wide", page_title="Semiconductor Data Analysis Tool")
 
 # ---------------------------------------------------------
@@ -31,12 +68,19 @@ with st.sidebar:
     st.markdown("---")
     
     analysis_mode = st.radio(
-        "분석할 데이터 종류를 선택하세요.",
-        ("1. Transfer 특성 분석", "2. Output 특성 분석", "3. TLM 특성 분석", "4. AFM 표면 분석"),
+        "분석/시뮬레이션 모드를 선택하세요.",
+        (
+            "1. Transfer 특성 분석", 
+            "2. Output 특성 분석", 
+            "3. TLM 특성 분석", 
+            "4. AFM 표면 분석",
+            "5. HEMT 밴드 다이어그램 시뮬레이터"
+        ),
         key="selected_mode"
     )
     st.markdown("---")
     
+    # 1. Transfer 축 범위 설정
     if analysis_mode == "1. Transfer 특성 분석":
         st.header("⚙️ Transfer 축 범위 설정")
         t_x_auto = st.checkbox("X축 자동 조절", value=True, key="t_x_auto")
@@ -62,6 +106,7 @@ with st.sidebar:
             window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window")
             poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly")
 
+    # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
         st.header("⚙️ Output 축 범위 설정")
         o_x_auto = st.checkbox("X축(Vd) 자동 조절", value=True, key="o_x_auto")
@@ -77,6 +122,7 @@ with st.sidebar:
         st.subheader("📌 온저항(Ron) 분석 설정")
         target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg")
 
+    # 3. TLM 축 범위 설정
     elif analysis_mode == "3. TLM 특성 분석":
         st.header("⚙️ TLM 설정")
         t_w_um = st.number_input("전극 폭 (W, um)", value=220.0, step=10.0, key="tlm_w")
@@ -93,16 +139,21 @@ with st.sidebar:
             tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
+    # 4. AFM 설정
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
         st.info("💡 메인 화면의 슬라이더를 조절하여 '기준면(Baseline)'을 설정하면, 해당 영역을 0으로 맞춘 완벽한 단차(Step Height) 계산이 가능합니다.")
+        
+    # 5. HEMT 시뮬레이터 (설정창 불필요 - 메인 화면에 배치)
+    elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
+        st.info("💡 우측 메인 화면의 슬라이더를 조절하여 소자 파라미터를 변경해 보세요.")
 
     st.markdown("---")
     st.header("🤖 AI 연구 어시스턴트")
     st.link_button("💬 Gemini 새 창으로 열기", "https://gemini.google.com/app", use_container_width=True)
 
-st.title("📊 반도체 소자 특성 통합 분석 웹앱")
+st.title("📊 반도체 소자 특성 통합 분석 & 시뮬레이션 웹앱")
 
 # =====================================================================
 # [모드 1] Transfer 특성 분석
@@ -125,7 +176,7 @@ if analysis_mode == "1. Transfer 특성 분석":
     if files_to_process:
         col1, col2 = st.columns([8, 2])
         with col1:
-            st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 유지/분석 중입니다.")
+            st.success(f"현재 {len(files_to_process)}개의 Transfer 파일이 분석 중입니다.")
         with col2:
             if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_t"):
                 st.session_state['transfer_files_data'] = []
@@ -270,7 +321,7 @@ if analysis_mode == "1. Transfer 특성 분석":
 
         buf_img = BytesIO()
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
-        st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Transfer_Plot.png", mime="image/png")
+        st.download_button("📥 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Transfer_Plot.png", mime="image/png")
 
         if len(all_summaries) > 0:
             st.markdown("---")
@@ -294,7 +345,7 @@ if analysis_mode == "1. Transfer 특성 분석":
             buf_excel = BytesIO()
             with pd.ExcelWriter(buf_excel, engine='openpyxl') as writer:
                 styled_df.to_excel(writer, index=False)
-            st.download_button("📥 비교 요약 엑셀 다운로드 (.xlsx)", data=buf_excel.getvalue(), file_name="Comparison_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 비교 요약 엑셀 다운로드", data=buf_excel.getvalue(), file_name="Comparison_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
         if processed_dfs:
             st.markdown("---")
@@ -329,7 +380,7 @@ elif analysis_mode == "2. Output 특성 분석":
     if files_to_process_out:
         col1, col2 = st.columns([8, 2])
         with col1:
-            st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
+            st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 분석 중입니다.")
         with col2:
             if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_o"):
                 st.session_state['output_files_data'] = []
@@ -422,7 +473,7 @@ elif analysis_mode == "2. Output 특성 분석":
 
         buf_img = BytesIO()
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
-        st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
+        st.download_button("📥 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
 
         if output_summaries:
             st.markdown("---")
@@ -720,7 +771,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                 st.markdown("#### 📏 단면 프로파일 및 단차(Step Height) 측정 설정")
                 st.info("단차를 잴 때 기준이 되는 평평한 바닥면을 '기준면(Baseline)' 슬라이더로 지정하세요. 이 구간을 0으로 완벽하게 수평 피팅합니다.")
                 
-                # Y축 라인 프로파일 위치 선택
                 profile_y = st.slider(f"단면을 자를 기준 Y축 위치 (um)", y_min_real, y_max_real, y_min_real + (y_max_real-y_min_real)/2, step=0.1, key=f"p_slide_{file_name}")
                 y_idx = np.argmin(np.abs(y_coords - profile_y))
                 raw_z_line = Z_matrix_raw[y_idx, :]
@@ -731,7 +781,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                 with c_step:
                     step_range = st.slider("🟥 단차 측정(Step Height 계산 영역)", x_min_real, x_max_real, (x_max_real - 2.0, x_max_real), step=0.1, key=f"step_slide_{file_name}")
 
-                # 지정된 기준면을 이용해 해당 Line의 기울기를 계산하고 완벽하게 0으로 폄 (Baseline Leveling)
                 base_mask = (x_coords >= base_range[0]) & (x_coords <= base_range[1])
                 step_mask = (x_coords >= step_range[0]) & (x_coords <= step_range[1])
                 
@@ -739,9 +788,8 @@ elif analysis_mode == "4. AFM 표면 분석":
                     slope, intercept = np.polyfit(x_coords[base_mask], raw_z_line[base_mask], 1)
                     leveled_z_line = raw_z_line - (slope * x_coords + intercept)
                 else:
-                    leveled_z_line = raw_z_line # 마스킹 영역이 너무 좁을 경우 원본 유지
+                    leveled_z_line = raw_z_line 
                     
-                # 단차(Step Height) 계산
                 if sum(step_mask) > 0:
                     step_height = np.mean(leveled_z_line[step_mask])
                 else:
@@ -769,7 +817,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                 y_crop_mask = (y_coords >= sel_y[0]) & (y_coords <= sel_y[1])
                 crop_Z = Z_matrix_flattened[y_crop_mask, :][:, x_crop_mask]
                 
-                # 거칠기 계산
                 Ra = np.mean(np.abs(crop_Z))
                 Rq = np.sqrt(np.mean(crop_Z**2))
                 Rpv = np.max(crop_Z) - np.min(crop_Z)
@@ -782,7 +829,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                     'Rpv (Peak-to-Valley, nm)': Rpv
                 })
                 
-                # 6. 시각화 (좌: 수치 및 단면 프로파일, 우: 3D 플롯)
                 col_res, col_plot = st.columns([1, 2])
                 
                 with col_res:
@@ -790,18 +836,12 @@ elif analysis_mode == "4. AFM 표면 분석":
                     st.success(f"**측정된 단차(Step Height)** : {abs(step_height):.3f} nm")
                     st.info(f"**Rq (RMS 거칠기)** : {Rq:.3f} nm\n\n**Ra (Average)** : {Ra:.3f} nm\n\n**Rpv (Max-Min)** : {Rpv:.3f} nm")
                     
-                    # 2D 라인 플롯 생성 (Matplotlib)
                     plt.rcParams['font.family'] = 'Arial'
                     fig_prof, ax_prof = plt.subplots(figsize=(6, 4))
                     
-                    # 라인 프로파일 그리기
                     ax_prof.plot(x_coords, leveled_z_line, color='blue', linewidth=1.5, label='Leveled Profile')
-                    
-                    # 기준면(초록색)과 측정면(빨간색) 음영 하이라이트
                     ax_prof.axvspan(base_range[0], base_range[1], color='green', alpha=0.2, label='Baseline (Z=0)')
                     ax_prof.axvspan(step_range[0], step_range[1], color='red', alpha=0.2, label='Step Target')
-                    
-                    # 단차 텍스트 표시
                     ax_prof.axhline(0, color='black', linestyle='--', linewidth=1)
                     ax_prof.axhline(step_height, color='black', linestyle='--', linewidth=1)
                     
@@ -814,7 +854,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                     st.pyplot(fig_prof)
                     
                 with col_plot:
-                    # Plotly를 이용한 3D 지형도 (전체 영역 렌더링)
                     fig_3d = go.Figure(data=[go.Surface(
                         z=Z_matrix_flattened,
                         x=x_coords,
@@ -823,11 +862,10 @@ elif analysis_mode == "4. AFM 표면 분석":
                         colorbar=dict(title='Height (nm)')
                     )])
                     
-                    # 3D 맵 위에 사용자가 선택한 라인 프로파일 위치를 붉은 선으로 표시
                     fig_3d.add_trace(go.Scatter3d(
                         x=x_coords,
                         y=np.full_like(x_coords, y_coords[y_idx]),
-                        z=leveled_z_line + (np.max(Z_matrix_flattened) * 0.05), # 지형도 위로 살짝 띄워서 선명하게 보임
+                        z=leveled_z_line + (np.max(Z_matrix_flattened) * 0.05),
                         mode='lines',
                         line=dict(color='red', width=5),
                         name='Profile Line'
@@ -865,3 +903,121 @@ elif analysis_mode == "4. AFM 표면 분석":
             with pd.ExcelWriter(buf_afm, engine='openpyxl') as writer:
                 afm_sum_df.to_excel(writer, index=False)
             st.download_button("📥 통합 요약 엑셀 다운로드", data=buf_afm.getvalue(), file_name="AFM_Step_Roughness_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# =====================================================================
+# [모드 5] HEMT 밴드 다이어그램 시뮬레이터 (새로 추가됨!)
+# =====================================================================
+elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
+    st.subheader("⚡ AlGaN/GaN HEMT Energy Band Simulator")
+    st.markdown("Recess 식각 깊이, Al 조성, AlN Interlayer 유무 등 물리적 파라미터 변화가 1D Energy Band Diagram과 문턱 전압($V_{th}$), 2DEG 밀도에 미치는 영향을 시뮬레이션합니다.")
+
+    col_input, col_plot = st.columns([1, 2.5])
+
+    with col_input:
+        st.markdown("#### ⚙️ Device Parameters")
+        
+        x_al = st.slider("Al Composition (x)", 0.1, 0.4, 0.25, 0.01)
+        
+        st.markdown("---")
+        t_algan_init = st.number_input("Initial AlGaN Thickness (nm)", value=15.0, step=1.0)
+        recess_depth = st.slider("Recess Depth (nm)", 0.0, float(t_algan_init), 0.0, 0.5)
+        t_aln = st.number_input("AlN Interlayer Thickness (nm)", value=0.0, step=0.5)
+        
+        st.markdown("---")
+        phi_m = st.number_input("Gate Metal Workfunction (eV)", value=5.1, step=0.1)
+        vg = st.slider("Gate Bias ($V_g$)", -5.0, 2.0, 0.0, 0.1)
+
+    t_algan = (t_algan_init - recess_depth) * 1e-9
+    t_aln_m = t_aln * 1e-9
+
+    algan = get_AlGaN_params(x_al)
+
+    # 1. Polarization Charge
+    sigma_pz_algan = algan['P_total'] - GaN['Psp']
+    if t_aln > 0:
+        sigma_pz_aln = AlN['Psp'] - GaN['Psp']
+    else:
+        sigma_pz_aln = 0
+
+    sigma_total = abs(sigma_pz_algan) 
+    n_polarization = sigma_total / q
+
+    # 2. Vth & 2DEG
+    dE_c = 0.7 * (algan['Eg'] - GaN['Eg'])
+    phi_b = phi_m - algan['chi']           
+
+    C_barrier = (eps_0 * algan['eps_r']) / t_algan if t_algan > 0 else 1e-10
+    Vth = phi_b - (dE_c / q) - (sigma_total * t_algan) / (eps_0 * algan['eps_r'])
+    
+    ns_m2 = (C_barrier / q) * (vg - Vth)
+    ns_cm2 = ns_m2 * 1e-4 if ns_m2 > 0 else 0
+
+    # 3. Band Profile (Simplified Poisson)
+    depth_nm = 100 
+    x = np.linspace(0, depth_nm, 500)
+    x_m = x * 1e-9
+
+    Ec = np.zeros_like(x)
+    Ev = np.zeros_like(x)
+
+    for i, pos in enumerate(x_m):
+        if pos <= t_algan:
+            E_field = (phi_b - vg - (dE_c/q - Vth)) / t_algan if t_algan > 0 else 0
+            Ec[i] = (phi_b - vg) - E_field * pos
+            Ev[i] = Ec[i] - algan['Eg']
+            
+        elif pos <= t_algan + t_aln_m:
+            Ec[i] = Ec[i-1] + 0.7 * (AlN['Eg'] - algan['Eg'])
+            Ev[i] = Ec[i] - AlN['Eg']
+            
+        else:
+            GaN_start_idx = np.argmin(np.abs(x_m - (t_algan + t_aln_m)))
+            Ec_interface = Ec[GaN_start_idx-1] - dE_c 
+            
+            distance = pos - (t_algan + t_aln_m)
+            lambda_d = 5e-9 
+            
+            if ns_cm2 > 0:
+                Ec[i] = Ec_interface + 0.5 * (1 - np.exp(-distance / lambda_d))
+            else:
+                Ec[i] = Ec_interface + 2.0 * (1 - np.exp(-distance / lambda_d))
+                
+            Ev[i] = Ec[i] - GaN['Eg']
+
+    Ef = np.zeros_like(x)
+
+    with col_plot:
+        c1, c2 = st.columns(2)
+        c1.info(f"**Threshold Voltage ($V_{{th}}$)**\n\n### {Vth:.2f} V")
+        c2.success(f"**2DEG Density ($n_s$) @ $V_g$={vg}V**\n\n### {ns_cm2:.2e} $cm^{{-2}}$")
+        
+        fig_band = go.Figure()
+        fig_band.add_trace(go.Scatter(x=x, y=Ec, mode='lines', name='Conduction Band ($E_C$)', line=dict(color='blue', width=3)))
+        fig_band.add_trace(go.Scatter(x=x, y=Ev, mode='lines', name='Valence Band ($E_V$)', line=dict(color='red', width=3)))
+        fig_band.add_trace(go.Scatter(x=x, y=Ef, mode='lines', name='Fermi Level ($E_F$)', line=dict(color='black', width=2, dash='dash')))
+        
+        fig_band.add_vline(x=t_algan*1e9, line_width=1, line_dash="dash", line_color="gray")
+        fig_band.add_annotation(x=(t_algan*1e9)/2, y=np.max(Ec)+0.5, text="AlGaN", showarrow=False, font=dict(size=14))
+        
+        if t_aln > 0:
+            fig_band.add_vline(x=(t_algan + t_aln_m)*1e9, line_width=1, line_dash="dash", line_color="gray")
+            fig_band.add_annotation(x=(t_algan*1e9 + t_aln)/2, y=np.max(Ec)+0.5, text="AlN", showarrow=False)
+            
+        fig_band.add_annotation(x=t_algan*1e9 + 20, y=np.max(Ec)+0.5, text="GaN", showarrow=False, font=dict(size=14))
+        
+        fig_band.update_layout(
+            title='1D Energy Band Diagram across the Heterostructure',
+            xaxis_title='Depth from Surface (nm)',
+            yaxis_title='Energy (eV)',
+            hovermode='x unified',
+            template='plotly_white',
+            legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99),
+            margin=dict(l=0, r=0, t=40, b=0)
+        )
+        st.plotly_chart(fig_band, use_container_width=True)
+
+    with st.expander("🔍 상세 물리 파라미터 확인 (Material & Polarization Data)"):
+        st.write(f"- **AlGaN Bandgap ($E_g$)**: {algan['Eg']:.2f} eV")
+        st.write(f"- **Conduction Band Offset ($\Delta E_C$)**: {dE_c:.2f} eV")
+        st.write(f"- **Spontaneous Polarization ($P_{{sp}}$)**: {algan['P_total'] - GaN['Psp']:.4f} $C/m^2$")
+        st.write(f"- **Total Induced Sheet Charge Density ($\sigma$)**: {n_polarization * 1e-4:.2e} $cm^{{-2}}$")
