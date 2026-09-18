@@ -80,7 +80,6 @@ with st.sidebar:
     )
     st.markdown("---")
     
-    # 1. Transfer 축 범위 설정
     if analysis_mode == "1. Transfer 특성 분석":
         st.header("⚙️ Transfer 축 범위 설정")
         t_x_auto = st.checkbox("X축 자동 조절", value=True, key="t_x_auto")
@@ -106,7 +105,6 @@ with st.sidebar:
             window_length = st.slider("필터 강도 (Window Length, 홀수)", min_value=3, max_value=51, value=11, step=2, key="sg_window")
             poly_order = st.slider("다항식 차수 (Poly Order)", min_value=1, max_value=5, value=2, key="sg_poly")
 
-    # 2. Output 축 범위 설정
     elif analysis_mode == "2. Output 특성 분석":
         st.header("⚙️ Output 축 범위 설정")
         o_x_auto = st.checkbox("X축(Vd) 자동 조절", value=True, key="o_x_auto")
@@ -122,7 +120,6 @@ with st.sidebar:
         st.subheader("📌 온저항(Ron) 분석 설정")
         target_vg = st.number_input("Ron 추출 기준 Vg (V)", value=3.0, step=1.0, key="target_vg")
 
-    # 3. TLM 축 범위 설정
     elif analysis_mode == "3. TLM 특성 분석":
         st.header("⚙️ TLM 설정")
         t_w_um = st.number_input("전극 폭 (W, um)", value=220.0, step=10.0, key="tlm_w")
@@ -139,13 +136,11 @@ with st.sidebar:
             tlm_y_min = st.number_input("Y축 최소값 (mA)", value=-15.0, step=1.0, key="tlm_ymin")
             tlm_y_max = st.number_input("Y축 최대값 (mA)", value=15.0, step=1.0, key="tlm_ymax")
 
-    # 4. AFM 설정
     elif analysis_mode == "4. AFM 표면 분석":
         st.header("⚙️ AFM 3D 렌더링 설정")
         color_theme = st.selectbox("컬러 맵 선택", ["earth", "hot", "viridis", "plasma", "inferno", "magma", "cividis"], index=0)
         st.info("💡 메인 화면의 슬라이더를 조절하여 '기준면(Baseline)'을 설정하면, 해당 영역을 0으로 맞춘 완벽한 단차(Step Height) 계산이 가능합니다.")
         
-    # 5. HEMT 시뮬레이터 (설정창 불필요 - 메인 화면에 배치)
     elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
         st.info("💡 우측 메인 화면의 슬라이더를 조절하여 소자 파라미터를 변경해 보세요.")
 
@@ -380,7 +375,7 @@ elif analysis_mode == "2. Output 특성 분석":
     if files_to_process_out:
         col1, col2 = st.columns([8, 2])
         with col1:
-            st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 분석 중입니다.")
+            st.success(f"현재 {len(files_to_process_out)}개의 Output 파일이 유지/분석 중입니다.")
         with col2:
             if st.button("🗑️ 전체 파일 삭제", use_container_width=True, key="del_o"):
                 st.session_state['output_files_data'] = []
@@ -473,7 +468,7 @@ elif analysis_mode == "2. Output 특성 분석":
 
         buf_img = BytesIO()
         fig.savefig(buf_img, format="png", dpi=300, bbox_inches='tight')
-        st.download_button("📥 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
+        st.download_button("📥 고화질 통합 그래프 다운로드 (.png)", data=buf_img.getvalue(), file_name="Combined_Output_Plot.png", mime="image/png")
 
         if output_summaries:
             st.markdown("---")
@@ -745,7 +740,6 @@ elif analysis_mode == "4. AFM 표면 분석":
             st.subheader(f"🔬 샘플 분석: {file_name}")
             
             try:
-                # 1. 텍스트 파일 파싱
                 file.seek(0)
                 lines = file.readlines()
                 
@@ -759,7 +753,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                 df_afm = pd.read_csv(file, skiprows=start_idx, sep=r'\s+', names=['X', 'Y', 'Z'])
                 df_afm = df_afm.dropna()
                 
-                # 2. 고유 X, Y 및 원본 Z_matrix 생성
                 x_coords = np.sort(df_afm['X'].unique())
                 y_coords = np.sort(df_afm['Y'].unique())
                 Z_matrix_raw = df_afm['Z'].values.reshape((len(y_coords), len(x_coords)))
@@ -767,9 +760,7 @@ elif analysis_mode == "4. AFM 표면 분석":
                 x_min_real, x_max_real = float(x_coords[0]), float(x_coords[-1])
                 y_min_real, y_max_real = float(y_coords[0]), float(y_coords[-1])
 
-                # --- 3. UI 슬라이더: 기준면(Baseline) 지정 및 단차 계산 ---
                 st.markdown("#### 📏 단면 프로파일 및 단차(Step Height) 측정 설정")
-                st.info("단차를 잴 때 기준이 되는 평평한 바닥면을 '기준면(Baseline)' 슬라이더로 지정하세요. 이 구간을 0으로 완벽하게 수평 피팅합니다.")
                 
                 profile_y = st.slider(f"단면을 자를 기준 Y축 위치 (um)", y_min_real, y_max_real, y_min_real + (y_max_real-y_min_real)/2, step=0.1, key=f"p_slide_{file_name}")
                 y_idx = np.argmin(np.abs(y_coords - profile_y))
@@ -795,7 +786,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                 else:
                     step_height = 0.0
 
-                # --- 4. 3D 지형도용 전체 평탄화 (선택된 Baseline을 전체 영역에 적용) ---
                 Z_matrix_flattened = np.zeros_like(Z_matrix_raw)
                 for i in range(len(y_coords)):
                     z_line = Z_matrix_raw[i, :]
@@ -805,7 +795,6 @@ elif analysis_mode == "4. AFM 표면 분석":
                     else:
                         Z_matrix_flattened[i, :] = z_line
 
-                # --- 5. 거칠기를 계산할 ROI(관심 영역) 크롭 ---
                 st.markdown("#### ✂️ 표면 거칠기(Roughness) 계산 영역 지정")
                 c1, c2 = st.columns(2)
                 with c1:
@@ -905,7 +894,7 @@ elif analysis_mode == "4. AFM 표면 분석":
             st.download_button("📥 통합 요약 엑셀 다운로드", data=buf_afm.getvalue(), file_name="AFM_Step_Roughness_Summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # =====================================================================
-# [모드 5] HEMT 밴드 다이어그램 시뮬레이터 (새로 추가됨!)
+# [모드 5] HEMT 밴드 다이어그램 시뮬레이터 (오류 수정 완료)
 # =====================================================================
 elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
     st.subheader("⚡ AlGaN/GaN HEMT Energy Band Simulator")
@@ -924,7 +913,7 @@ elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
         t_aln = st.number_input("AlN Interlayer Thickness (nm)", value=0.0, step=0.5)
         
         st.markdown("---")
-        phi_m = st.number_input("Gate Metal Workfunction (eV)", value=5.1, step=0.1)
+        phi_m = st.number_input("Gate Metal Workfunction (eV)", value=5.4, step=0.1)
         vg = st.slider("Gate Bias ($V_g$)", -5.0, 2.0, 0.0, 0.1)
 
     t_algan = (t_algan_init - recess_depth) * 1e-9
@@ -943,11 +932,13 @@ elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
     n_polarization = sigma_total / q
 
     # 2. Vth & 2DEG
-    dE_c = 0.7 * (algan['Eg'] - GaN['Eg'])
-    phi_b = phi_m - algan['chi']           
+    dE_c = 0.7 * (algan['Eg'] - GaN['Eg']) # eV 단위 에너지 장벽
+    phi_b = phi_m - algan['chi']           # eV 단위 장벽 높이
 
     C_barrier = (eps_0 * algan['eps_r']) / t_algan if t_algan > 0 else 1e-10
-    Vth = phi_b - (dE_c / q) - (sigma_total * t_algan) / (eps_0 * algan['eps_r'])
+    
+    # 수정 완료: dE_c는 이미 eV이므로 q로 나누지 않습니다.
+    Vth = phi_b - dE_c - (sigma_total * t_algan) / (eps_0 * algan['eps_r'])
     
     ns_m2 = (C_barrier / q) * (vg - Vth)
     ns_cm2 = ns_m2 * 1e-4 if ns_m2 > 0 else 0
@@ -962,7 +953,8 @@ elif analysis_mode == "5. HEMT 밴드 다이어그램 시뮬레이터":
 
     for i, pos in enumerate(x_m):
         if pos <= t_algan:
-            E_field = (phi_b - vg - (dE_c/q - Vth)) / t_algan if t_algan > 0 else 0
+            # 수정 완료: 전계 계산 시에도 전위차(Volts)와 에너지(eV)를 동일 선상에서 계산
+            E_field = (phi_b - vg - (dE_c - Vth)) / t_algan if t_algan > 0 else 0
             Ec[i] = (phi_b - vg) - E_field * pos
             Ev[i] = Ec[i] - algan['Eg']
             
