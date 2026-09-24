@@ -5,5 +5,5 @@ matplotlib
 scipy
 plotly
 openpyxl
-streamlit-authenticator
+streamlit-authenticator==0.3.2
 supabase
