@@ -1,4 +1,5 @@
 import streamlit as st
+st.set_page_config(layout="wide")
 import streamlit_authenticator as stauth
 from streamlit_authenticator.utilities.hasher import Hasher
 
