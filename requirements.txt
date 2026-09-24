@@ -2,6 +2,8 @@ streamlit
 pandas
 numpy
 matplotlib
-openpyxl
 scipy
 plotly
+openpyxl
+streamlit-authenticator
+supabase
