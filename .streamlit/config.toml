@@ -5,3 +5,5 @@ backgroundColor = "#0b192c"
 secondaryBackgroundColor = "#1a2c4e"
 textColor = "#ffffff"
 font = "sans serif"
+[theme]
+base="dark" # 밝은 테마를 원할 경우 "light"로 변경
